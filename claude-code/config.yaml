@@ -1,8 +1,10 @@
 ---
 name: Claude Code
-version: "1.0.0"
+version: "1.1.0"
 slug: claude_code
-description: Claude Code CLI with a skills web UI and an HTTP API for prompts and jobs
+description: >-
+  Claude Code CLI with a skills web UI and an HTTP API for prompts and jobs.
+  Set the default model here; a request can override it per job.
 url: https://github.com/paradoxm/ha-addon-claude-code/tree/main/claude-code
 arch:
   - aarch64
@@ -23,6 +25,8 @@ options:
   api_token: ""
   timeout_minutes: 90
 schema:
-  model: str
+  # Aliases rather than pinned ids: each one tracks the newest model of its tier,
+  # so this list does not go stale. A job may still send a full model name.
+  model: list(opus|sonnet|haiku|fable)
   api_token: password?
   timeout_minutes: int(5,720)

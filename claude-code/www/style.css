@@ -356,7 +356,7 @@ button { font-family: var(--mono); cursor: pointer; }
 .drop b { color: var(--amber); font-weight: 400; }
 
 .field { display: block; margin-top: 18px; }
-.field--inline { max-width: 200px; }
+.field--inline { max-width: 260px; }
 
 .field input,
 .field textarea {

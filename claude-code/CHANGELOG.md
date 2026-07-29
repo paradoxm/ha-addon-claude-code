@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+- The `model` option is now a dropdown of the four aliases the CLI accepts:
+  `opus`, `sonnet`, `haiku`, `fable`. Aliases rather than pinned ids, so the list
+  tracks the newest model of each tier instead of going stale.
+- The web UI's model box offers the same aliases while still accepting a typed
+  full name such as `claude-sonnet-5`, and shows the configured default when left
+  empty.
+- Clarified that `api_token` is a value you invent, not one issued by Home
+  Assistant or Anthropic.
+
 ## 1.0.0
 
 - First release.

@@ -76,9 +76,7 @@ async function loadHealth() {
         els.skills.textContent = health.skills;
         els.queue.textContent = health.queued;
         els.loginBanner.hidden = health.logged_in;
-        if (!els.model.value && !els.model.placeholder) {
-            els.model.placeholder = health.default_model;
-        }
+        els.model.placeholder = `default · ${health.default_model}`;
         showError("");
     } catch (error) {
         showError(`Cannot reach the add-on API: ${error.message}`);

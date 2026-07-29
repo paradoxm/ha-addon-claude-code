@@ -87,9 +87,18 @@
 
       <label class="field field--inline">
         <span class="rule-label">model</span>
-        <input type="text" id="model" placeholder="opus" spellcheck="false"
+        <!-- A list rather than a select: the four aliases are one keystroke
+             away, but a full name such as claude-sonnet-5 can still be typed. -->
+        <input type="text" id="model" list="models" spellcheck="false"
                autocomplete="off">
+        <datalist id="models">
+          <option value="opus">most capable</option>
+          <option value="sonnet">cheaper, faster</option>
+          <option value="haiku">cheapest, fastest</option>
+          <option value="fable">most expensive</option>
+        </datalist>
       </label>
+      <p class="hint">Leave empty to use the add-on's default.</p>
 
       <button class="solid" id="run">Queue job</button>
 

@@ -59,9 +59,35 @@ Uninstalling the add-on does remove the volume. If a skill exists only here, use
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `model` | `opus` | Default for jobs that do not name one. |
+| `model` | `opus` | Default for jobs that do not name one. See below. |
 | `api_token` | empty | Required before the API accepts traffic from the network. See below. |
 | `timeout_minutes` | `90` | A run past this is killed and the job marked failed. |
+
+### Choosing a model
+
+The option is a list of the four aliases the CLI accepts:
+
+| Alias | Tier |
+| --- | --- |
+| `opus` | most capable |
+| `sonnet` | cheaper and faster |
+| `haiku` | cheapest and fastest |
+| `fable` | most expensive |
+
+Aliases rather than pinned ids on purpose: each always points at the newest model
+of its tier, so the list cannot go stale.
+
+**This is only the default.** Any job can override it, which is the point when a
+task is simple enough that the cheapest tier will do:
+
+```json
+{"prompt": "Rename these files consistently.", "model": "haiku", "start": true}
+```
+
+The per-job field is a free string, so a full name such as `claude-sonnet-5` works
+there too when a specific version matters. In the web UI the model box offers the
+aliases as a dropdown and still accepts a typed full name; leaving it empty uses
+the add-on's default.
 
 ### Reaching the API from another add-on
 
