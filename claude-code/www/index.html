@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="masthead__title">
+    <h1>Claude&nbsp;Code</h1>
+    <p class="rule-label">skills &amp; job console</p>
+  </div>
+
+  <dl class="readout" id="readout">
+    <div><dt>version</dt><dd id="r-version">—</dd></div>
+    <div><dt>account</dt><dd id="r-login">—</dd></div>
+    <div><dt>skills</dt><dd id="r-skills">—</dd></div>
+    <div><dt>queue</dt><dd id="r-queue">—</dd></div>
+  </dl>
+
+  <a class="terminal-link" href="terminal/" target="_blank" rel="noopener">
+    Terminal <span aria-hidden="true">↗</span>
+  </a>
+</header>
+
+<p class="banner banner--warn" id="login-banner" hidden>
+  Not signed in yet. Open the <a href="terminal/" target="_blank" rel="noopener">terminal</a>
+  and run <code>claude</code> once to authenticate.
+</p>
+
+<p class="banner banner--error" id="error-banner" hidden></p>
+
+<main>
+  <section class="panel panel--skills reveal" style="--delay: 0ms">
+    <div class="panel__head">
+      <h2 class="rule-label">Installed skills</h2>
+      <button class="ghost" id="refresh">refresh</button>
+    </div>
+    <ol class="skills" id="skills"></ol>
+    <p class="empty" id="skills-empty" hidden>
+      Nothing installed. Upload a <code>.tar.gz</code> whose top level holds
+      <code>SKILL.md</code>.
+    </p>
+  </section>
+
+  <div class="rail">
+    <section class="panel reveal" style="--delay: 90ms">
+      <div class="panel__head">
+        <h2 class="rule-label">Add or update</h2>
+      </div>
+
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".gz,.tgz,application/gzip,application/x-gzip" hidden>
+        <span class="drop__mark" aria-hidden="true"></span>
+        <span class="drop__text" id="drop-text">
+          Drop a <b>.tar.gz</b> here, or click to choose
+        </span>
+      </label>
+
+      <label class="field">
+        <span class="rule-label">skill name</span>
+        <input type="text" id="name" placeholder="wedding-ceremony-script"
+               spellcheck="false" autocomplete="off">
+      </label>
+      <p class="hint">
+        Uploading a name that already exists replaces it. Letters, digits,
+        <code>.</code> <code>_</code> <code>-</code> only.
+      </p>
+
+      <button class="solid" id="upload" disabled>Install skill</button>
+    </section>
+
+    <section class="panel reveal" style="--delay: 180ms">
+      <div class="panel__head">
+        <h2 class="rule-label">Run a prompt</h2>
+      </div>
+
+      <label class="field">
+        <span class="rule-label">prompt</span>
+        <textarea id="prompt" rows="4"
+                  placeholder="Use the wedding-ceremony-script skill and…"></textarea>
+      </label>
+
+      <label class="field field--inline">
+        <span class="rule-label">model</span>
+        <input type="text" id="model" placeholder="opus" spellcheck="false"
+               autocomplete="off">
+      </label>
+
+      <button class="solid" id="run">Queue job</button>
+
+      <div class="job" id="job" hidden>
+        <div class="job__head">
+          <span class="pill" id="job-status">queued</span>
+          <code id="job-id"></code>
+        </div>
+        <pre class="job__out" id="job-out"></pre>
+        <ul class="job__files" id="job-files"></ul>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
