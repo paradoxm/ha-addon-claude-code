@@ -6,6 +6,56 @@ and an HTTP API for sending prompts and collecting the results.
 Everything lives in the add-on's own `/data` volume. No Home Assistant folder is
 mapped, and nothing else needs filesystem access.
 
+## Hardware requirements
+
+**Check this before installing.** Claude Code ships as a native binary that
+requires the **AVX** instruction set. Without it the binary is killed the moment
+it starts, and [Anthropic documents no
+workaround](https://code.claude.com/docs/en/troubleshoot-install#illegal-instruction).
+
+Run this on the machine that hosts Home Assistant, or in this add-on's terminal:
+
+```bash
+grep -m1 -ow avx /proc/cpuinfo || echo "no AVX: Claude Code cannot run here"
+```
+
+Also needed: **x86-64 or ARM64**, and **4 GB+ RAM** — a large skill spawns
+subagents, so a 2 GB box will not do.
+
+### What lacking AVX looks like
+
+Running `claude` prints `Illegal instruction (core dumped)`, and the add-on log
+reports:
+
+```
+ERROR: The claude binary did not run (exit 132) on x86_64.
+ERROR: This CPU reports no AVX support, and Claude Code's native binary requires it.
+ERROR: Model: AMD E-450 APU with Radeon(tm) HD Graphics
+```
+
+Exit 132 is 128 + 4, meaning the process died on SIGILL. Through the job API the
+same failure appears as `"exit_code": -4`.
+
+### Which processors are affected
+
+AVX arrived with Intel Sandy Bridge and AMD Bulldozer in 2011, so most desktop
+and laptop chips from 2011 onward have it. The exceptions are the low-power
+lines: AMD Bobcat (E-350, E-450, C-60 and similar) and the Intel Atom and
+Celeron parts of that era never got AVX, whatever year the machine was sold.
+Those chips are common in the small, quiet boxes people pick for Home Assistant,
+which is exactly where this bites.
+
+On a **virtual machine** the CPU may support AVX while the hypervisor hides it
+behind a generic model such as `kvm64` or `qemu64`. That case is fixable: set the
+guest CPU type to `host` and reboot the guest. In Proxmox this is
+**VM → Hardware → Processors → Type**.
+
+On **bare metal without AVX** there is nothing to configure. The remaining
+options are to host Home Assistant on a machine that has AVX, or to run this
+add-on's image as a plain Docker container on another machine that does — it does
+not depend on the Supervisor, and needs only a `/data` volume holding an
+`options.json`.
+
 ## Install
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, and add
