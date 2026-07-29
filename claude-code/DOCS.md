@@ -71,10 +71,17 @@ one — but nothing outside the container can connect.
 
 To let another add-on such as n8n call it:
 
-1. Set `api_token` to a long random string.
-2. Map port `7682` in the add-on's **Network** section.
-3. Call `http://<home-assistant-ip>:7682/` with
-   `Authorization: Bearer <api_token>`.
+1. **Invent the token yourself** and put it in the `api_token` option. Nothing
+   issues it: it is not a Home Assistant access token and not a Claude API key,
+   just a shared secret between the caller and this add-on. Generate one with
+   `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`, or use any
+   long random string.
+2. Save the configuration and restart the add-on.
+3. Map port `7682` in the add-on's **Network** section.
+4. Call `http://<home-assistant-ip>:7682/` with
+   `Authorization: Bearer <the same value>`.
+
+Wherever `$TOKEN` appears below, it is that value.
 
 A note on addressing by hostname instead: add-ons installed from a repository get
 `{hashed-repo-id}_claude_code`, not `local_claude_code`, so the name is not
