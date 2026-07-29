@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+- Report why the `claude` binary failed instead of logging a bare
+  `version unavailable`. Startup discarded its stderr, which turned any failure
+  into an unexplained line with nothing to act on; the log now carries the exit
+  code, the machine architecture, and the binary's own output.
+
 ## 1.1.0
 
 - The `model` option is now a dropdown of the four aliases the CLI accepts:

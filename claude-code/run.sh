@@ -46,7 +46,17 @@ sed -e "s|__API_TOKEN__|${API_TOKEN}|" \
     -e "s|__ALLOW__|${ALLOW}|" \
     /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
-bashio::log.info "Claude Code $(claude --version 2>/dev/null || echo 'version unavailable')"
+# Both streams are kept: discarding stderr here turned a broken binary into an
+# unexplained "version unavailable" with nothing to act on.
+if CLAUDE_VERSION="$(claude --version 2>&1)"; then
+    bashio::log.info "Claude Code ${CLAUDE_VERSION}"
+else
+    # Captured first: a later expansion in the same line would overwrite $?.
+    CLAUDE_STATUS=$?
+    bashio::log.error "The claude binary did not run (exit ${CLAUDE_STATUS}) on $(uname -m)."
+    bashio::log.error "Its output was: ${CLAUDE_VERSION:-<nothing>}"
+    bashio::log.error "Run 'claude doctor' in the Web UI terminal for more detail."
+fi
 
 if [ ! -f "${HOME}/.claude/.credentials.json" ]; then
     bashio::log.warning "Not logged in yet. Open the Web UI, go to Terminal, and run: claude"

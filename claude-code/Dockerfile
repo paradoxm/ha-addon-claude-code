@@ -38,6 +38,6 @@ LABEL \
     io.hass.name="Claude Code" \
     io.hass.description="Claude Code CLI with a skills web UI and an HTTP job API" \
     io.hass.type="addon" \
-    io.hass.version="1.1.0"
+    io.hass.version="1.1.1"
 
 CMD [ "/run.sh" ]
