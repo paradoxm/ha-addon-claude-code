@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2
+
+- Name the AVX requirement when the binary dies with `Illegal instruction`.
+  Claude Code's native binary needs AVX, which pre-2013 processors lack and which
+  a hypervisor may not pass through to the guest; the add-on now says so, prints
+  the CPU model, and points at the guest CPU type, instead of leaving a bare
+  SIGILL for the reader to decode.
+
 ## 1.1.1
 
 - Report why the `claude` binary failed instead of logging a bare

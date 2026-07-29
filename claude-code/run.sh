@@ -55,7 +55,19 @@ else
     CLAUDE_STATUS=$?
     bashio::log.error "The claude binary did not run (exit ${CLAUDE_STATUS}) on $(uname -m)."
     bashio::log.error "Its output was: ${CLAUDE_VERSION:-<nothing>}"
-    bashio::log.error "Run 'claude doctor' in the Web UI terminal for more detail."
+
+    # Exit -4 is SIGILL. Anthropic documents this: the native binary needs AVX,
+    # which pre-2013 processors lack and which a hypervisor may not pass through
+    # to the guest. Worth naming explicitly, because there is no workaround and
+    # the bare signal tells nobody that.
+    if [ "$(uname -m)" = "x86_64" ] && ! grep -qw avx /proc/cpuinfo 2>/dev/null; then
+        bashio::log.error "This CPU reports no AVX support, and Claude Code's native binary requires it."
+        bashio::log.error "Model: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')"
+        bashio::log.error "On a virtual machine, set the guest CPU type to 'host' so AVX is passed through, then reboot it."
+        bashio::log.error "On bare metal with a pre-2013 CPU there is no workaround; Claude Code cannot run on this machine."
+    else
+        bashio::log.error "Run 'claude doctor' in the Web UI terminal for more detail."
+    fi
 fi
 
 if [ ! -f "${HOME}/.claude/.credentials.json" ]; then
