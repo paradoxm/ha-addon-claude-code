@@ -31,6 +31,43 @@ Team, or Enterprise plan.
 https://github.com/paradoxm/ha-addon-claude-code
 ```
 
+## Signing in
+
+The add-on ships no credentials and asks for none in its configuration: it signs
+in the way the CLI does, once, from its own terminal.
+
+1. Start the add-on and open **Web UI**. Until it is signed in the console says so
+   in a banner, and the account reads *not signed in*.
+2. Click **Terminal** and run:
+
+   ```bash
+   claude
+   ```
+
+3. Choose your Claude account when it asks, and it prints a link with a code. Open
+   the link in a browser — on any machine, it does not have to be this one — approve
+   it, and paste the code back into the terminal.
+4. Check it took:
+
+   ```bash
+   claude auth status
+   ```
+
+   It answers with the account's email, organisation and plan. The console's header
+   turns to *signed in* on its next poll, and `GET /health` reports `logged_in`.
+
+The sign-in is kept in the add-on's own `/data` volume, so it survives restarts,
+add-on updates and CLI updates, and it goes into Home Assistant's backups with
+everything else. Once is enough: the access token lives about eight hours and the
+add-on renews it from the refresh token beside it, before it can expire, whether or
+not anybody is watching.
+
+To sign out, or to move the add-on to another account, run `claude auth logout` in
+the same terminal and start again from step 2.
+
+A Claude account on a **Pro, Max, Team or Enterprise** plan is required — Claude
+Code does not run on the free plan.
+
 ## Add-ons
 
 ### [Claude Code](claude-code/)

@@ -63,10 +63,15 @@ not depend on the Supervisor, and needs only a `/data` volume holding an
 2. Install *Claude Code*. The image is built on the Home Assistant machine, so the
    first install takes a few minutes.
 3. Start it and open **Web UI**.
-4. Click **Terminal**, run `claude`, and follow the prompts to sign in.
+4. Click **Terminal**, run `claude`, choose your account, and open the link it
+   prints — on any machine — then paste the code back. `claude auth status` says
+   whose account it is, and the console's header turns to *signed in*.
 
-The sign-in is needed once. Requires a Claude account on a Pro, Max, Team, or
-Enterprise plan.
+The sign-in is needed once: it is kept in the add-on's own `/data`, so it outlives
+restarts, add-on updates and CLI updates and goes into the backups, and the add-on
+renews the token by itself before it can expire. `claude auth logout` in the same
+terminal signs out. Requires a Claude account on a Pro, Max, Team, or Enterprise
+plan.
 
 ## The console
 
