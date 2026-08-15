@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="masthead__title">
+    <h1>Claude&nbsp;Code</h1>
+    <p class="rule-label">conversation</p>
+  </div>
+
+  <!-- Below the breakpoint neither the readings nor the five actions fit beside
+       the title, and none of them is what you came to a phone to look at. The
+       whole group becomes one panel behind this button — the same elements, moved
+       by the stylesheet rather than copied. -->
+  <button class="action action--icon masthead__menu" id="menu" aria-label="Menu"
+          aria-expanded="false" aria-controls="tools">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <line x1="1.5" y1="4" x2="14.5" y2="4" stroke="currentColor" stroke-width="1.6"/>
+      <line x1="1.5" y1="8" x2="14.5" y2="8" stroke="currentColor" stroke-width="1.6"/>
+      <line x1="1.5" y1="12" x2="14.5" y2="12" stroke="currentColor" stroke-width="1.6"/>
+    </svg>
+  </button>
+
+  <div class="drawer" id="drawer">
+    <div class="masthead__tools" id="tools">
+    <dl class="readout">
+      <div><dt>version</dt><dd id="r-version">—</dd></div>
+      <div><dt>account</dt><dd id="r-login">—</dd></div>
+      <div><dt>skills</dt><dd id="r-skills">—</dd></div>
+      <div><dt>queue</dt><dd id="r-queue">—</dd></div>
+      <div><dt>updates</dt><dd id="r-updates">—</dd></div>
+    </dl>
+
+    <div class="actions" id="actions">
+      <button class="action" id="new-chat" title="Start a fresh conversation">New chat</button>
+      <!-- Drawn rather than typed: the ⌕ glyph is missing from most monospace fonts
+           and fell back to something misaligned. -->
+      <button class="action action--icon" id="history" title="Search past conversations"
+              aria-label="Search past conversations">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+          <circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor"
+                  stroke-width="1.6"/>
+          <line x1="10" y1="10" x2="14.2" y2="14.2" stroke="currentColor"
+                stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span class="action__drawer-only">Past conversations</span>
+      </button>
+      <button class="action" id="settings-open" title="Skills, permissions and updates">
+        Settings
+      </button>
+      <a class="action" href="terminal/" target="_blank" rel="noopener">
+        Terminal <span aria-hidden="true">↗</span>
+      </a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<p class="banner" id="login-banner" role="status" hidden>
+  Not signed in yet. Open the <a href="terminal/" target="_blank" rel="noopener">terminal</a>
+  and run <code>claude</code> once to authenticate.
+</p>
+
+<p class="banner banner--error" id="limits-banner" role="alert" hidden></p>
+<p class="banner banner--error" id="error-banner" role="alert" hidden></p>
+
+<div class="banner banner--closable" id="update-banner" role="status" hidden>
+  <span id="update-text"></span>
+  <button class="banner__close" id="update-dismiss" aria-label="Dismiss this message"
+          title="Dismiss">&times;</button>
+</div>
+
+<main>
+  <section class="panel panel--chat reveal">
+    <div class="panel__head">
+      <div class="title">
+        <h2 class="rule-label">Conversation</h2>
+        <button class="title__name" id="chat-title" title="Click to rename — runs /rename">
+          New conversation
+        </button>
+      </div>
+      <button class="chip" id="controls-chip" aria-expanded="false" aria-controls="controls">
+        <span id="controls-summary">—</span>
+      </button>
+
+      <div class="controls" id="controls">
+        <label class="inline-field">
+          <span class="rule-label">model</span>
+          <!-- A select like its neighbours: as a text input with a placeholder it
+               read as unset. The API still accepts a full name such as
+               claude-sonnet-5 for anything that needs to pin a version. -->
+          <select id="model"></select>
+        </label>
+        <label class="inline-field">
+          <span class="rule-label">effort</span>
+          <select id="effort"></select>
+        </label>
+        <label class="inline-field">
+          <span class="rule-label">mode</span>
+          <select id="mode"></select>
+        </label>
+      </div>
+    </div>
+
+    <div class="transcript" id="transcript" aria-live="polite" aria-label="Conversation">
+      <p class="empty" id="transcript-empty">
+        Nothing yet. A skill is picked up automatically when it fits, or name it
+        outright.
+      </p>
+    </div>
+
+    <!-- Offered only when the reader has scrolled away from the end: following the
+         text is their call, and this is how they hand it back. -->
+    <button class="to-latest" id="to-latest" hidden>newest</button>
+
+    <div class="queue" id="chat-queue" hidden></div>
+
+    <div class="contextbar" id="contextbar" hidden>
+      <p class="context" id="context"></p>
+      <!-- Deliberately a count and nothing else: a warning from the CLI is worth
+           knowing about, but not worth pushing into the conversation. -->
+      <button class="ghost ghost--warn" id="notices" hidden
+              title="Warnings and failed tool calls from this conversation">
+        <span id="notices-count"></span>
+      </button>
+      <button class="ghost" id="compact" hidden
+              title="Summarises the conversation so far. It cannot shrink the fixed overhead — system prompt, tool definitions, skill metadata — so on a short conversation the figure barely moves.">
+        compact
+      </button>
+    </div>
+
+    <form class="composer" id="composer">
+      <textarea id="prompt" class="prompt" rows="2"
+                placeholder="Message Claude — Enter sends, Shift+Enter for a new line"></textarea>
+      <button class="solid solid--inline" id="send" type="submit">Send</button>
+    </form>
+  </section>
+
+</main>
+
+<div class="overlay" id="history-overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="history-heading">
+    <div class="sheet__head">
+      <h2 class="rule-label" id="history-heading">Past conversations</h2>
+      <button class="banner__close" id="history-close" aria-label="Close">&times;</button>
+    </div>
+    <input type="search" id="history-search" class="sheet__search"
+           placeholder="Filter by title or first message" autocomplete="off" spellcheck="false">
+    <div class="sheet__list" id="history-list"></div>
+    <p class="empty" id="history-empty" hidden>No conversations match.</p>
+  </div>
+</div>
+
+
+<div class="overlay" id="notices-overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="notices-heading">
+    <div class="sheet__head">
+      <h2 class="rule-label" id="notices-heading">Notices</h2>
+      <button class="banner__close" id="notices-close" aria-label="Close">&times;</button>
+    </div>
+    <p class="sheet__note">
+      What the CLI reported alongside this conversation — a refused request, an
+      unknown command, a tool call that failed. Kept out of the messages on purpose.
+    </p>
+    <div class="sheet__list" id="notices-list"></div>
+  </div>
+</div>
+
+
+<div class="overlay" id="settings-overlay" hidden>
+  <div class="sheet sheet--wide" role="dialog" aria-modal="true"
+       aria-labelledby="settings-heading">
+    <div class="sheet__head">
+      <h2 class="rule-label" id="settings-heading">Settings</h2>
+      <button class="banner__close" id="settings-close" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab is-active" id="tab-usage" role="tab" aria-selected="true"
+              aria-controls="pane-usage">Usage</button>
+      <button class="tab" id="tab-skills" role="tab" aria-selected="false"
+              aria-controls="pane-skills">Skills</button>
+      <button class="tab" id="tab-permissions" role="tab" aria-selected="false"
+              aria-controls="pane-permissions">Permissions</button>
+      <button class="tab" id="tab-mcp" role="tab" aria-selected="false"
+              aria-controls="pane-mcp">MCP</button>
+      <button class="tab" id="tab-memory" role="tab" aria-selected="false"
+              aria-controls="pane-memory">CLAUDE.md</button>
+      <button class="tab" id="tab-config" role="tab" aria-selected="false"
+              aria-controls="pane-config">Config</button>
+      <button class="tab" id="tab-updates" role="tab" aria-selected="false"
+              aria-controls="pane-updates">Updates</button>
+    </div>
+
+    <div class="pane" id="pane-skills" role="tabpanel" aria-labelledby="tab-skills" hidden>
+      <div class="panel__head">
+        <h2 class="rule-label">Skills</h2>
+        <button class="ghost" id="refresh">refresh</button>
+      </div>
+      <div class="skills" id="skills"></div>
+      <p class="empty" id="skills-empty" hidden>
+        Nothing installed yet.
+      </p>
+
+      <h3 class="rule-label pane__sub">Add or replace</h3>
+      <label class="drop" id="drop">
+        <!-- Not `hidden`: that took it out of the tab order, leaving no keyboard
+             path to the picker at all. The stylesheet hides it visually. -->
+        <input type="file" id="file" accept=".gz,.tgz,application/gzip,application/x-gzip">
+        <span class="drop__mark" aria-hidden="true"></span>
+        <span id="drop-text">
+          Drop a <b>.tar.gz</b> here, or click to choose
+        </span>
+      </label>
+
+      <p class="hint">
+        The name comes from <code>name:</code> in the archive's <code>SKILL.md</code>.
+        Uploading one that is already installed replaces it.
+      </p>
+
+      <button class="solid" id="upload" disabled>Install skill</button>
+    </div>
+
+    <div class="pane" id="pane-permissions" role="tabpanel"
+         aria-labelledby="tab-permissions" hidden>
+      <p class="hint" id="settings-path"></p>
+      <textarea id="settings-json" class="editor" spellcheck="false"
+                aria-label="Claude Code settings as JSON"></textarea>
+      <p class="hint" id="settings-status"></p>
+      <div class="pane__actions">
+        <button class="ghost" id="settings-format">format</button>
+        <button class="ghost" id="settings-reload">reload</button>
+        <button class="solid solid--inline" id="settings-save">Save</button>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-mcp" role="tabpanel" aria-labelledby="tab-mcp" hidden>
+      <div id="mcp-list"></div>
+      <p class="empty" id="mcp-empty" hidden>No MCP servers are configured.</p>
+
+      <p class="hint">
+        Servers are added in the <a href="terminal/" target="_blank" rel="noopener">terminal</a>
+        with <code>claude mcp add</code>, which is where a command, its environment and
+        any tokens belong. A switch here lifts a server out of Claude Code's
+        configuration and keeps its definition — secrets included — so switching it
+        back on restores it exactly as it was.
+      </p>
+      <p class="hint">
+        Servers that come from an installed plugin are not listed: those belong to the
+        plugin, and it is the plugin that turns them on and off.
+      </p>
+    </div>
+
+    <div class="pane" id="pane-memory" role="tabpanel" aria-labelledby="tab-memory" hidden>
+      <p class="hint" id="memory-path"></p>
+      <textarea id="memory-text" class="editor" spellcheck="false"
+                aria-label="Instructions for every conversation"></textarea>
+      <p class="hint" id="memory-status"></p>
+      <div class="pane__actions">
+        <button class="ghost" id="memory-reload">reload</button>
+        <button class="solid solid--inline" id="memory-save">Save</button>
+      </div>
+      <p class="hint">
+        Claude Code reads this before every conversation in this add-on — house rules,
+        how you want things phrased, what to leave alone. Markdown, no schema. A
+        <code>CLAUDE.md</code> in a project folder adds to it rather than replacing it.
+      </p>
+    </div>
+
+    <div class="pane" id="pane-config" role="tabpanel" aria-labelledby="tab-config" hidden>
+      <p class="hint" id="config-path"></p>
+      <textarea id="config-text" class="editor" spellcheck="false"
+                aria-label="Claude Code's configuration as JSON"></textarea>
+      <p class="hint" id="config-status"></p>
+      <div class="pane__actions">
+        <button class="ghost" id="config-format">format</button>
+        <button class="ghost" id="config-reload">reload</button>
+        <button class="solid solid--inline" id="config-save">Save</button>
+      </div>
+      <p class="hint">
+        Claude Code's own file: the account it is signed in as, the MCP servers, and a
+        record of every folder it has been run in. It writes this itself, so saving is
+        refused while Claude is working, and what you type replaces the file whole.
+        <b>It holds credentials.</b> Editing it wrongly can break the sign-in, which
+        the terminal can put back with <code>claude</code>.
+      </p>
+    </div>
+
+    <div class="pane" id="pane-usage" role="tabpanel" aria-labelledby="tab-usage">
+      <div class="window" id="usage-session">
+        <div class="window__head">
+          <h3>Current session</h3>
+          <span class="window__figure" id="usage-session-figure">—</span>
+        </div>
+        <div class="meter">
+          <div class="meter__fill" id="usage-session-bar"></div>
+          <span class="meter__mark" id="usage-session-mark" hidden></span>
+        </div>
+        <p class="hint" id="usage-session-when">—</p>
+      </div>
+
+      <div class="window" id="usage-week">
+        <div class="window__head">
+          <h3>This week</h3>
+          <span class="window__figure" id="usage-week-figure">—</span>
+        </div>
+        <div class="meter">
+          <div class="meter__fill" id="usage-week-bar"></div>
+          <span class="meter__mark" id="usage-week-mark" hidden></span>
+        </div>
+        <p class="hint" id="usage-week-when">—</p>
+      </div>
+
+      <p class="progress" id="usage-note"></p>
+
+      <div class="pane__actions">
+        <span class="hint" id="usage-checked">—</span>
+        <button class="ghost" id="usage-refresh">refresh</button>
+      </div>
+
+      <p class="hint" id="usage-rule"></p>
+    </div>
+
+    <div class="pane" id="pane-updates" role="tabpanel" aria-labelledby="tab-updates" hidden>
+      <dl class="facts">
+        <div><dt>installed</dt><dd id="u-installed">—</dd></div>
+        <div><dt>available</dt><dd id="u-available">—</dd></div>
+        <div><dt>channel</dt><dd id="u-channel">—</dd></div>
+        <div><dt>automatic</dt><dd id="u-auto">—</dd></div>
+      </dl>
+
+      <p class="progress" id="u-progress"></p>
+      <pre class="output" id="u-output" hidden></pre>
+
+      <p class="hint" id="u-binary"></p>
+
+      <div class="pane__actions">
+        <button class="ghost" id="u-check">check now</button>
+        <button class="solid solid--inline" id="u-install">Update CLI</button>
+      </div>
+
+      <p class="hint">
+        Runs <code>claude install</code>, which writes to the add-on's own volume, so
+        the update outlives a restart. An install takes about half a minute and keeps
+        going if you close this page. When the version actually changes, installed
+        marketplaces and plugins are refreshed with it. Updating is refused while a
+        job is running, so the binary is never swapped out from under a run.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

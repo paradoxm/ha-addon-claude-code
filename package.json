@@ -1,0 +1,16 @@
+{
+  "name": "ha-addon-claude-code-dev",
+  "private": true,
+  "description": "Development-only tooling. Nothing here ships inside the add-on image, which copies www/ verbatim and installs no Node runtime.",
+  "scripts": {
+    "test": "node --test --test-force-exit tests/frontend/*.test.mjs",
+    "lint": "eslint claude-code/www tests/frontend"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "globals": "^17.11.0",
+    "jsdom": "^26.0.0",
+    "puppeteer-core": "^25.6.0"
+  }
+}

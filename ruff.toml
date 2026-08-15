@@ -1,0 +1,15 @@
+# The rules this project is held to. Explicit rather than default so that a `noqa`
+# has to name a rule that is actually switched on: an unnecessary one is itself an
+# error (RUF100), which is what stops them accumulating as decoration.
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "W", "F", "I", "B", "BLE", "S", "SIM", "UP", "RUF"]
+
+[lint.per-file-ignores]
+# Tests assert — that is the whole job — and they carry a token, name the address the
+# API binds to, and spawn a stand-in binary on purpose. None of those is a finding
+# here; they are the things under test.
+"tests/**" = ["S101", "S104", "S105", "S106"]
+"tools/stub-claude.py" = ["S101", "S108"]

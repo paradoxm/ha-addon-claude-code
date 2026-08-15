@@ -1,0 +1,89 @@
+---
+configuration:
+  model:
+    name: Default model
+    description: >-
+      Used by any job that does not name one. Aliases track the newest model of
+      each tier: opus is the most capable, sonnet is cheaper and faster, haiku is
+      the cheapest and fastest, fable is the most expensive. A request may send a
+      full model name such as claude-sonnet-5 instead.
+  effort:
+    name: Default reasoning effort
+    description: >-
+      How hard Claude thinks before answering, from low to max. medium is the
+      CLI's own default. Higher levels cost more tokens and take longer. A message
+      or an API request can override it.
+  permission_mode:
+    name: Default permission mode
+    description: >-
+      manual approves nothing by itself. That is safe here rather than crippling,
+      because the add-on already pre-approves Bash, Read, Write, Edit, Glob and Grep
+      with --allowedTools, and those apply whatever the mode: ordinary work and a
+      skill's own scripts run, while anything outside that list — a web request, an
+      MCP tool — is refused instead of asked about. acceptEdits additionally
+      auto-approves filesystem commands, which the Bash grant already covers. auto
+      routes everything through a safety classifier and refuses nothing, so it also
+      allows network access; it needs a plan and model that permit it. plan only
+      reads and proposes, answering with a plan instead of doing the work. dontAsk
+      allows only pre-approved tools and denies the rest outright.
+  api_token:
+    name: API token
+    description: >-
+      A value you invent — nothing issues it. Leave it empty and the API listens
+      on localhost only, reachable through this add-on's web UI but not from other
+      add-ons. Set it, and map port 7682, to let another add-on send prompts.
+      At least 16 characters of A-Z a-z 0-9 . _ ~ - ; generate one with
+      python3 -c "import secrets; print(secrets.token_urlsafe(48))".
+  session_threshold:
+    name: Stop the five-hour window at
+    description: >-
+      Per cent of the plan's five-hour allowance. This window refills as the day goes on,
+      so spending it to the brim costs an hour of waiting rather than a week of it — most
+      people leave this one high.
+  week_threshold:
+    name: Stop the weekly window at
+    description: >-
+      Per cent of the plan's weekly allowance, judged on its own. This is what a whole
+      week of work has to fit inside, so a lower figure here keeps something in reserve
+      for the days that are left. Work stops when either window is past its own figure,
+      and GET /usage reports both alongside `enough`.
+  limit_threshold:
+    name: Stop work at (old name)
+    description: >-
+      The single figure both windows used to share. It is still read when neither of the
+      two above is set, so an add-on that has been running keeps the number it was given.
+      Clear it once the two above are set.
+  guard_limits:
+    name: Act on the limit
+    description: >-
+      Refuse to start a turn when the allowance is already past the figure above, and
+      freeze a turn that runs into it — the CLI and every subagent stop where they stand,
+      spending nothing, and carry on by themselves once the window resets. Off means the
+      add-on only reports the figure and whoever drives it decides. A reading that cannot
+      be had never stops work. Left unset it is on.
+  usage_check_seconds:
+    name: Read the allowance every
+    description: >-
+      Seconds. Every reading is a request to Anthropic, so one number governs all of them:
+      the answer is cached for this long, the watcher looks no more often than this even
+      when it is close to the figure above, and the console asks no more often either. A
+      page nobody is looking at does not ask at all. Raise it to be gentler, lower it to
+      react sooner.
+  timeout_minutes:
+    name: Job timeout
+    description: >-
+      A run that exceeds this is killed, along with any subagents it started, and
+      the job is marked failed. Long skills genuinely take tens of minutes.
+  auto_update:
+    name: Update the CLI automatically
+    description: >-
+      Check for a newer Claude Code at start and every twelve hours, and install
+      it. The update is written to the add-on's persistent volume, so it survives
+      restarts. An update is deferred while a job is running.
+  update_channel:
+    name: Update channel
+    description: >-
+      latest takes every release as it ships; stable runs about a week behind and
+      skips releases with major regressions.
+network:
+  7682/tcp: HTTP API for other add-ons. Only listens when an API token is set.
