@@ -495,7 +495,8 @@ def test_another_caller_starts_its_own_conversation_rather_than_joining_this_one
     console_session = client.get("/chat").json["session"]
 
     theirs = client.send_json(
-        "POST", "/jobs", {"prompt": "a bot's first message", "chat": True, "source": "kitchen-tablet"}
+        "POST", "/jobs",
+        {"prompt": "a bot's first message", "chat": True, "source": "kitchen-tablet"},
     )
     client.send_json("POST", f"/jobs/{theirs.json['id']}/start")
     wait_for_status(client, theirs.json["id"], "done")

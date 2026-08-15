@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.18.1
+
+- **The Watchdog reads the container's own health now.** Home Assistant calls the
+  `watchdog:` URL obsolete and takes its answer from the image's `HEALTHCHECK`, which
+  was already there — so that check picked up the half it was missing: its first
+  request goes through nginx instead of straight at the API, which is what the
+  Supervisor used to probe from outside. nginx, the API and the terminal, every thirty
+  seconds. `startup`, `boot` and `ingress_port` are gone from the options as well; each
+  only repeated Home Assistant's own default.
+- A `cd` in the terminal script that could fail silently now exits instead.
+
 ## 1.18.0
 
 - **A figure for each window.** *Stop work at* was one number for both, which meant being

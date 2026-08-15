@@ -1,0 +1,101 @@
+# What a person would run before pushing, run for them — and a few things a person
+# cannot: the image really building, and a scan of every commit for anything that
+# looks like a credential.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pinned: a linter that updates itself turns a green branch red without anybody
+      # touching it, and the rule that appears is never the one you were working on.
+      - run: python -m pip install --upgrade pip "ruff==0.16.3" "mypy==2.3.0" pytest pytest-cov
+      - name: ruff
+        run: python -m ruff check --no-cache .
+      - name: mypy
+        run: python -m mypy claude-code/api.py tools/*.py --ignore-missing-imports
+      # The whole of api.py, or the run fails: a line nothing exercises is a line
+      # nobody has ever seen work.
+      - name: tests
+        run: python -m pytest tests -q --cov=api --cov-report=term-missing --cov-fail-under=100
+
+  interface:
+    name: interface
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: eslint
+        run: npm run lint
+      - name: tests
+        run: npm test
+
+  shell:
+    name: shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # shellcheck comes with the runner. These two scripts start the add-on and open
+      # its terminal; a typo in either is a container that will not boot.
+      - name: shellcheck
+        run: shellcheck claude-code/run.sh claude-code/shell.sh
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: claude-code/Dockerfile
+          # Warnings are advice — an unpinned apk version is deliberate here. An error
+          # is a Dockerfile that will not build.
+          failure-threshold: error
+      # Home Assistant builds this image on the machine it runs on, so a build here
+      # proves nothing about that machine — but it does prove the Dockerfile still
+      # works, which is the half that breaks.
+      - name: build
+        run: docker build --pull -t claude-code-addon:ci claude-code
+
+  addon:
+    name: addon
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # config.yaml against Home Assistant's own schema: the options, the schema, the
+      # ports and the ingress settings.
+      - uses: frenck/action-addon-linter@v2
+        with:
+          path: ./claude-code
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Every commit, not just the tip: a token committed and removed is still a
+          # token that was published.
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --redact --no-banner --verbose

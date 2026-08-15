@@ -33,10 +33,14 @@ COPY api.py run.sh shell.sh /
 RUN chmod a+x /run.sh /shell.sh
 
 # Supervisor maps an unhealthy container to a restart when the add-on's Watchdog
-# option is on, and this is the only probe that also covers ttyd. /ping is the
-# token-free liveness route; the API's other routes require the token.
+# option is on, and since the `watchdog:` URL in config.yaml became obsolete this is
+# the whole of it. So the first request goes through nginx rather than straight at the
+# API: the same thing the Supervisor used to probe from outside, proving nginx and the
+# API together, where either dying alone would leave the container looking alive.
+# /ping is the token-free liveness route; nginx adds the token for everything else.
+# The second covers ttyd, which nothing else would notice.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
-    CMD curl -fsS -o /dev/null http://127.0.0.1:7682/ping \
+    CMD curl -fsS -o /dev/null http://127.0.0.1:8099/api/ping \
         && curl -fsS -o /dev/null http://127.0.0.1:7681/terminal/
 
 # No LABEL block on purpose: Supervisor passes io.hass.name/description/url/arch

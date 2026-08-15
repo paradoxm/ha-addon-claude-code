@@ -34,8 +34,9 @@ python3 -m coverage run --source=claude-code -m pytest tests -q
 python3 -m coverage report --show-missing
 ```
 
-That is 100% of statements and 99% of branches, from 273 tests. The UI has 49 of
-its own. The two original
+That is 100% of statements and 99% of branches, from 504 tests. The interface has 94
+of its own. Both suites and both linters run on every pull request
+(`.github/workflows/tests.yml`), and `main` takes nothing that is not green. The two original
 standard-library check scripts that used to live here have been retired: everything
 they covered is in `tests/`, and keeping both meant two places to update.
 

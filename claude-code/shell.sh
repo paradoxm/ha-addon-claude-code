@@ -8,5 +8,5 @@ export TERM=xterm-256color
 # over the packaged copy, so the terminal runs the version the add-on reports.
 export PATH="${HOME}/.local/bin:${PATH}"
 
-cd "${HOME}"
+cd "${HOME}" || exit 1
 exec bash

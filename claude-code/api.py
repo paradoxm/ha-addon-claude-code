@@ -1859,7 +1859,7 @@ def renew_access_token() -> str | None:
         scopes = oauth.get("scopes")
         if isinstance(scopes, list) and scopes:
             body["scope"] = " ".join(str(scope) for scope in scopes)
-        request = urllib.request.Request(  # noqa: S310 - fixed https host, constant above
+        request = urllib.request.Request(
             TOKEN_URL,
             data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json", "User-Agent": "claude-code-addon"},
@@ -1925,7 +1925,7 @@ def signed_in_token() -> tuple[str | None, str]:
 
 
 def ask_for_usage(token: str) -> dict:
-    request = urllib.request.Request(  # noqa: S310 - fixed https host, constant above
+    request = urllib.request.Request(
         USAGE_URL,
         headers={
             "Authorization": f"Bearer {token}",

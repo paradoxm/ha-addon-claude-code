@@ -507,9 +507,10 @@ copy, which is re-downloaded after a restore.
 - **Old jobs are pruned.** The newest 50 finished jobs are kept; older ones are
   deleted with their uploads and outputs when a new job is created.
 - **Turn the add-on's Watchdog option on.** It defaults to off. With it on, Home
-  Assistant restarts the add-on when the UI stops answering, and the container's
-  own health check catches the case where one of the three processes has died
-  while the others keep the container looking healthy.
+  Assistant restarts the add-on when the container reports itself unhealthy, and what
+  the image checks is nginx, the API behind it and the terminal — every thirty seconds,
+  three failures before it counts. That catches one of the three processes dying while
+  the others keep the container looking alive.
 - **`--bare` is deliberately not used.** Bare mode skips skill discovery and
   ignores the sign-in, requiring `ANTHROPIC_API_KEY` instead.
 - **Alpine needs the distro ripgrep**, so `run.sh` writes `USE_BUILTIN_RIPGREP=0`
