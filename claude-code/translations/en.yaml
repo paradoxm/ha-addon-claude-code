@@ -47,12 +47,6 @@ configuration:
       week of work has to fit inside, so a lower figure here keeps something in reserve
       for the days that are left. Work stops when either window is past its own figure,
       and GET /usage reports both alongside `enough`.
-  limit_threshold:
-    name: Stop work at (old name)
-    description: >-
-      The single figure both windows used to share. It is still read when neither of the
-      two above is set, so an add-on that has been running keeps the number it was given.
-      Clear it once the two above are set.
   guard_limits:
     name: Act on the limit
     description: >-

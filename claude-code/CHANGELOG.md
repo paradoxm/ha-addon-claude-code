@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.18.2
+
+- **`limit_threshold` is gone.** The single figure both windows used to share was kept for
+  one version so that an add-on already running would not lose the number it was set to.
+  Both windows have had their own figure since 1.18.0, so the old one only sat in the
+  configuration page inviting the question of whether it still did anything. It does not:
+  **clear it and save before updating**, because Home Assistant checks the saved options
+  against the schema and an option the schema no longer knows will hold the add-on back.
+  Neither window's default has changed — 90 per cent when a figure is unset.
+
 ## 1.18.1
 
 - **The Watchdog reads the container's own health now.** Home Assistant calls the

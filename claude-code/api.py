@@ -233,11 +233,9 @@ DEFAULT_EFFORT = str(OPTIONS.get("effort") or "")
 # How full a window may get before work stops. One figure per window, because the two are
 # not the same question: the five-hour window refills while the day goes on, so spending it
 # to the brim costs an hour of waiting, while the week is what a fortnight of work has to
-# fit inside — most people want to be stricter about the second. `limit_threshold` was the
-# single figure both used to share, and it is still honoured so an add-on that has been
-# running for a while keeps the number it was set to.
-SESSION_THRESHOLD = int(OPTIONS.get("session_threshold") or OPTIONS.get("limit_threshold") or 90)
-WEEK_THRESHOLD = int(OPTIONS.get("week_threshold") or OPTIONS.get("limit_threshold") or 90)
+# fit inside — most people want to be stricter about the second.
+SESSION_THRESHOLD = int(OPTIONS.get("session_threshold") or 90)
+WEEK_THRESHOLD = int(OPTIONS.get("week_threshold") or 90)
 # Whether the add-on acts on that number itself: refusing to start a turn against a wall,
 # and freezing one that runs into it. Off means it only reports, and whoever drives it
 # decides — which is how this started, and it left every caller to get it right alone.

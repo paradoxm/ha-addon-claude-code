@@ -1,6 +1,6 @@
 ---
 name: Claude Code
-version: "1.18.1"
+version: "1.18.2"
 slug: claude_code
 description: >-
   Claude Code CLI with a console for talking to it, your own skills, and an HTTP
@@ -65,9 +65,6 @@ schema:
   # the change that would have added it.
   session_threshold: int(10,100)?
   week_threshold: int(10,100)?
-  # The one figure both windows used to share. Still read when the two above are unset, so
-  # an add-on that has been running keeps the number it was set to; clear it once they are.
-  limit_threshold: int(10,100)?
   guard_limits: bool?
   # How often the account's allowance may be read at all. One number honoured by
   # everything: the answer is cached for this long, the watcher's closest look is never
