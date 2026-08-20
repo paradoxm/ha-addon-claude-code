@@ -352,16 +352,21 @@ carries `partial` — the reply as far as it has been written — and `activity`
 few tool calls with the file or command each was pointed at. That is what a caller
 shows someone who is waiting: a long run is often quiet for minutes at a time.
 
-A job may carry `effort`, `permission_mode`, `resume` and `source` alongside `prompt`
-and `model`. `{job_dir}` and `{job_id}` in a prompt are replaced with the job's own
+A job may carry `effort`, `permission_mode`, `resume`, `source` and `title` alongside
+`prompt` and `model`. `{job_dir}` and `{job_id}` in a prompt are replaced with the job's own
 directory and id when it is created, which is how a prompt names the folder its
 uploads are in. `source` says who sent the job: the console leaves it alone, and
 anything else — a script driving the API, say — names itself, which keeps its
 turns and its conversation out of the console's window. A chat job with a `source` of
 its own and no `resume` starts a new conversation rather than continuing the one the
-console is showing; the id comes back as `session_id` when the turn finishes, and
-passing it as `resume` on the next turn is what makes a bot's exchange one
-conversation. The chat routes are the same machinery with `chat: true` set, which is what
+console is showing; the id comes back as `session_id` as soon as the CLI says which
+conversation it is working in — seconds in, not at the end, so a caller can carry the work
+on even if the turn is cut short — and passing it as `resume` on the next turn is what makes
+a bot's exchange one conversation. `title` is what to call that new conversation, applied
+while the first turn is still running: a conversation opened by a skill is otherwise listed
+under the skill's own opening lines, the same ones for every conversation it opens. It is
+ignored by a turn that resumes a conversation, which has a name already, and by a job that
+is not a chat turn, whose session nothing lists. Renaming one later is `POST /chat/rename`. The chat routes are the same machinery with `chat: true` set, which is what
 makes a message from the console and a job from another add-on queue behind one another instead
 of running two CLI processes at once.
 

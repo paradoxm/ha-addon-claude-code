@@ -1,6 +1,6 @@
 ---
 name: Claude Code
-version: "1.18.2"
+version: "1.19.0"
 slug: claude_code
 description: >-
   Claude Code CLI with a console for talking to it, your own skills, and an HTTP

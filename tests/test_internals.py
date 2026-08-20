@@ -630,6 +630,36 @@ def test_the_last_result_record_is_the_one_that_counts(addon, tmp_path):
     assert addon.stream_result(tmp_path)["session_id"] == "second"
 
 
+def test_the_session_is_taken_from_the_first_record_that_carries_one(addon, tmp_path):
+    """The `init` record, which the CLI writes before it does any work — so the answer is
+    there seconds in, rather than at the end with the result."""
+    session = "b3dbc67b-fe8e-432e-976b-2892995e726e"
+    (tmp_path / "stream.jsonl").write_text(
+        "\n".join(
+            [
+                "",
+                "{ half written",
+                json.dumps({"type": "stream_event", "event": {}}),
+                json.dumps({"type": "system", "subtype": "init", "session_id": session}),
+                json.dumps({"type": "result", "session_id": "0" * 12}),
+            ]
+        )
+        + "\n"
+    )
+
+    assert addon.stream_session(tmp_path) == session
+
+
+def test_a_stream_with_no_session_in_it_yet_names_no_conversation(addon, tmp_path):
+    assert addon.stream_session(tmp_path) is None, "nothing written at all"
+
+    (tmp_path / "stream.jsonl").write_text(
+        json.dumps({"type": "stream_event", "event": {}}) + "\n"
+    )
+
+    assert addon.stream_session(tmp_path) is None, "and nothing that says which"
+
+
 def test_a_stream_that_cannot_be_read_is_reported_as_empty(addon, tmp_path, monkeypatch):
     (tmp_path / "stream.jsonl").write_text("{}\n")
 
@@ -644,6 +674,7 @@ def test_a_stream_that_cannot_be_read_is_reported_as_empty(addon, tmp_path, monk
 
     assert addon.stream_text(tmp_path) == ""
     assert addon.stream_result(tmp_path) is None
+    assert addon.stream_session(tmp_path) is None
 
 
 # --------------------------------------------------------------------------- #

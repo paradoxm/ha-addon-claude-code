@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.19.0
+
+- **A turn says which conversation it is in from its first seconds.** `session_id` used to
+  be written into the job record from the CLI's final report, so a caller driving the API
+  could not know it until the turn ended — and a turn that ended without a report, a
+  timeout or an add-on restart, never said at all. Its conversation could not be carried
+  on, and the work in it was lost. The id is taken from the stream the CLI writes as it
+  goes, where it appears before any work is done.
+- **A caller can name the conversation it opens.** A new `title` on `POST /jobs`, applied
+  while the first turn is still running. Every conversation a skill opens is otherwise
+  listed under the skill's own opening lines — the same ones for all of them — so a long
+  run could not be told from another until it came back. The name is written where
+  `/rename` writes it and costs no turn, so it does not queue behind the run it is naming.
+  Ignored by a turn that resumes a conversation, which is named already.
+
 ## 1.18.2
 
 - **`limit_threshold` is gone.** The single figure both windows used to share was kept for

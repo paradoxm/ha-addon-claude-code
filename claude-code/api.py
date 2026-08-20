@@ -42,6 +42,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -695,6 +696,31 @@ def session_title(session: str) -> str | None:
     return scanned["title"] if scanned and scanned["messages"] else None
 
 
+def set_session_title(session: str, title: str) -> bool:
+    """Name a conversation without spending a turn on it.
+
+    The name lives in the transcript, as the `custom-title` record `/rename` writes — so
+    writing that record is all renaming is, and `scan_session` above reads it back. Doing
+    it here rather than by asking the CLI is what lets a conversation be named while its
+    first turn is still running: a `/rename` turn would queue behind that turn and arrive
+    hours later, and would spend a request from the plan's allowance saying something the
+    file already holds.
+
+    False when there is no transcript to name — a job that is not a chat turn keeps its
+    conversation somewhere else entirely, and naming it would mean nothing.
+    """
+    directory = sessions_dir()
+    path = directory / f"{safe_name(session)}.jsonl" if directory else None
+    if path is None or not path.is_file():
+        return False
+    # Written as the CLI writes it: one line, and not ascii-escaped. The title arrives
+    # already collapsed and capped — see `create_job`, which is where it is let in.
+    record = {"type": "custom-title", "customTitle": title, "sessionId": session}
+    with path.open("a") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return True
+
+
 def forget_session(session: str) -> dict:
     """Delete a conversation: its transcript, which is the only place it lives.
 
@@ -1019,6 +1045,13 @@ def create_job(payload: dict) -> dict:
     if command is not None and command not in CHAT_COMMANDS:
         raise ApiError(400, f"command must be one of {', '.join(CHAT_COMMANDS)}")
 
+    # What to call the conversation this turn creates, applied as soon as the CLI says
+    # which conversation that is. Every conversation a skill opens is otherwise listed
+    # under the skill's own first lines, identical for all of them, so a caller that runs
+    # one has nothing to tell its own conversations apart by. Collapsed to one line here,
+    # since it is written into a JSONL record further on.
+    title = re.sub(r"\s+", " ", str(payload.get("title") or "")).strip()[:120] or None
+
     # An explicit session lets the history list act on a conversation that is not
     # the current one. For an ordinary chat message the session is deliberately NOT
     # captured here: a message queued while Claude is still answering would freeze
@@ -1048,6 +1081,7 @@ def create_job(payload: dict) -> dict:
         "chat": chat,
         "source": source,
         "command": command,
+        "title": title,
         "resumed_from": resume,
         "session_id": None,
         "context": None,
@@ -1098,12 +1132,21 @@ def start_job(job_id: str) -> dict:
     return job
 
 
-def run_claude(workdir: Path, bookkeeping: Path, argv: list, prompt: str) -> int:
+def run_claude(
+    workdir: Path,
+    bookkeeping: Path,
+    argv: list,
+    prompt: str,
+    on_session: Callable[[str], None] | None = None,
+) -> int:
     """Run the CLI, streaming its output to a file as it arrives.
 
     `workdir` is the CLI's working directory, which is what scopes its session
     history; `bookkeeping` is where this add-on keeps its own files, so a shared
     chat directory does not collect one log per turn.
+
+    `on_session` is called once, with the session id, the moment the CLI names the
+    conversation it is working in — which is seconds in, and not at the end.
 
     stdout goes straight to `stream.jsonl` rather than through a pipe, so the file
     grows while the turn runs and the reply can be read as it is produced. No
@@ -1150,6 +1193,13 @@ def run_claude(workdir: Path, bookkeeping: Path, argv: list, prompt: str) -> int
                     return process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
+                # Asked for every second until it can be answered, which is the first
+                # line the CLI writes; after that there is nothing left to look for.
+                if on_session is not None:
+                    session = stream_session(bookkeeping)
+                    if session:
+                        on_session(session)
+                        on_session = None
                 if PAUSED_AT is not None:
                     deadline += 1
                 if time.monotonic() >= deadline:
@@ -1299,6 +1349,37 @@ def stream_result(bookkeeping: Path) -> dict | None:
     return found
 
 
+def stream_session(bookkeeping: Path) -> str | None:
+    """Which conversation the turn is in, as soon as the CLI has said which.
+
+    Every record the CLI streams carries the session id, starting with the `init` one it
+    writes before doing any work — so the answer is in the first line of the file, seconds
+    after the turn starts. Taken from the final `result` record instead, as the outcome is,
+    it arrives only when the turn ends: a turn that runs for hours could not be named, and
+    one that died without a result record — a timeout, a restart — left nothing to carry
+    the conversation on with.
+    """
+    path = bookkeeping / "stream.jsonl"
+    if not path.is_file():
+        return None
+    try:
+        with path.open(errors="replace") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue  # the last line may be half-written while the turn runs
+                session = record.get("session_id")
+                if isinstance(session, str) and SESSION_ID.fullmatch(session):
+                    return session
+    except OSError:
+        return None
+    return None
+
+
 def run_job(job_id: str) -> None:
     bookkeeping = JOBS_DIR / job_id
     job = read_job(job_id)
@@ -1348,8 +1429,33 @@ def run_job(job_id: str) -> None:
         # stays one conversation however many turns it runs to.
         argv += ["--resume", resume]
 
+    named = False
+
+    def publish(session: str) -> None:
+        """Write down which conversation this turn is in, and name it if it is new.
+
+        Called from inside the run, as soon as the CLI says which conversation that is:
+        everything that has to survive the turn — a caller carrying the work on after a
+        restart, the name the conversation is listed under — needed this hours before the
+        turn ends. Written both to the record in hand, which is what the end of this
+        function saves, and through the lock, which is what a caller polling the job
+        reads.
+
+        Safe to call again, and called again when the turn ends: the id is written once,
+        and so is the name — but the name can only be written once there is a transcript
+        to write it into, and the CLI names the conversation a moment before it opens one.
+        """
+        nonlocal named
+        if job.get("session_id") != session:
+            job["session_id"] = session
+            update_job(job_id, session_id=session)
+        # Only a conversation this turn opened. One that was resumed has a name already —
+        # its own, or one its caller gave it when it was new.
+        if job.get("title") and not job.get("resumed_from") and not named:
+            named = set_session_title(session, job["title"])
+
     try:
-        returncode = run_claude(workdir, bookkeeping, argv, job["prompt"])
+        returncode = run_claude(workdir, bookkeeping, argv, job["prompt"], publish)
         job["exit_code"] = returncode
 
         # The CLI reports failures in its output rather than on stderr: a run with
@@ -1383,7 +1489,10 @@ def run_job(job_id: str) -> None:
         if isinstance(payload, dict):
             session = payload.get("session_id")
             if isinstance(session, str) and SESSION_ID.fullmatch(session):
-                job["session_id"] = session
+                # Ordinarily this happened while the turn ran. A turn short enough to
+                # finish inside the first second is written down here instead, and so is
+                # one whose transcript did not exist yet when it was first tried.
+                publish(session)
                 # A chat turn defines which conversation the next one continues,
                 # including the first turn, which had nothing to resume.
                 #

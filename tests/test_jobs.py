@@ -263,13 +263,20 @@ def test_a_job_falls_back_to_the_add_on_s_own_defaults(addon, client):
 
 
 def test_the_worker_survives_a_job_that_crashes_it(addon, client, monkeypatch):
+    # Waited for by the crash itself, not by the queue emptying: the queue hands the job
+    # over before the worker has done anything with it, so waiting on that alone let the
+    # patch below be undone in between — and the real thing then ran the job, which is a
+    # green test proving nothing. Seen once in CI, where the machine is slow enough.
+    crashed = threading.Event()
+
     def explode(job_id):
+        crashed.set()
         raise RuntimeError("something went badly wrong")
 
     monkeypatch.setattr(addon, "run_job", explode)
     crashing = create_job(client, "crashes the worker", start=True)
     wait_until(
-        lambda: addon.JOB_QUEUE.qsize() == 0 and addon.RUNNING_JOB is None,
+        lambda: crashed.is_set() and addon.JOB_QUEUE.qsize() == 0 and addon.RUNNING_JOB is None,
         description="the worker to swallow the crash",
     )
     monkeypatch.undo()

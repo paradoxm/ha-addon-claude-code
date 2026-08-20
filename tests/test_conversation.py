@@ -528,6 +528,103 @@ def test_another_caller_can_carry_on_its_own_conversation(fresh_conversation):
     assert client.get("/chat").json["pending"] == [], "and stays out of this window"
 
 
+def listed_session(client, session):
+    """One conversation as the history list shows it, or nothing yet."""
+    listed = client.get("/chat/sessions").json["sessions"]
+    return next((entry for entry in listed if entry["id"] == session), None)
+
+
+def test_a_caller_can_name_the_conversation_it_opens_while_the_turn_is_still_running(
+    client, stub_behaviour
+):
+    """Which is the only moment the name is any use.
+
+    A skill names every conversation it opens after its own opening lines — the same ones
+    for all of them — so a caller running a long turn for somebody else cannot tell one
+    from another until the work comes back, hours later. Waiting for the turn to end was
+    what the name was for.
+    """
+    stub_behaviour("STUB_SLEEP", "30")
+    turn = client.send_json(
+        "POST",
+        "/jobs",
+        {
+            "prompt": "a ceremony to write",
+            "chat": True,
+            "source": "kitchen-tablet",
+            # Two lines and some spare whitespace: what goes into the transcript is one
+            # line, because the record it is written into is one line.
+            "title": "  Церемония 23.08\n — Костя и Настя  ",
+            "start": True,
+        },
+    )
+    assert turn.status == 201
+    job_id = turn.json["id"]
+    try:
+        session = wait_until(
+            lambda: client.get(f"/jobs/{job_id}").json.get("session_id"),
+            description="the turn to say which conversation it is in",
+        )
+        named = wait_until(
+            lambda: listed_session(client, session),
+            description="the conversation to be listed",
+        )
+
+        assert named["title"] == "Церемония 23.08 — Костя и Настя"
+        assert named["custom"] is True
+        assert client.get(f"/jobs/{job_id}").json["status"] == "running", "and it is still working"
+    finally:
+        client.send_json("POST", f"/jobs/{job_id}/cancel")
+        wait_for_status(client, job_id, "failed")
+
+
+def test_a_conversation_that_is_carried_on_keeps_the_name_it_was_given(client):
+    """A name belongs to the conversation, not to the turn: every turn of a pair carries
+    the same one, and the second must not write it again."""
+    first = client.send_json(
+        "POST",
+        "/jobs",
+        {
+            "prompt": "the first turn",
+            "chat": True,
+            "source": "kitchen-tablet",
+            "title": "Церемония 23.08",
+            "start": True,
+        },
+    )
+    wait_for_status(client, first.json["id"], "done")
+    session = client.get(f"/jobs/{first.json['id']}").json["session_id"]
+    assert listed_session(client, session)["title"] == "Церемония 23.08"
+
+    second = client.send_json(
+        "POST",
+        "/jobs",
+        {
+            "prompt": "and the next",
+            "chat": True,
+            "source": "kitchen-tablet",
+            "resume": session,
+            "title": "something else entirely",
+            "start": True,
+        },
+    )
+    wait_for_status(client, second.json["id"], "done")
+
+    assert listed_session(client, session)["title"] == "Церемония 23.08"
+
+
+def test_a_job_that_is_not_a_chat_turn_has_no_conversation_to_name(client, addon):
+    """Its session is its own; nothing lists it, so there is nothing to name."""
+    turn = client.send_json(
+        "POST", "/jobs", {"prompt": "one off", "title": "Церемония 23.08", "start": True}
+    )
+    wait_for_status(client, turn.json["id"], "done")
+    session = client.get(f"/jobs/{turn.json['id']}").json["session_id"]
+
+    assert addon.set_session_title(session, "Церемония 23.08") is False
+    assert listed_session(client, session) is None
+
+
 def test_the_conversation_list_leaves_out_transcripts_with_nothing_in_them(
     addon, transcripts_dir, client
 ):
