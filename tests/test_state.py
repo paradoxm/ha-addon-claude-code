@@ -25,6 +25,9 @@ def nothing_stored(addon):
 
 
 def test_a_note_comes_back_exactly_as_it_was_left(client):
+    # The shape a caller really keeps — nested, mixed types, ids as keys — with an id
+    # nobody has. Test data copied from a live caller puts a real person into a public
+    # repository, which is not a thing a test needs to prove anything.
     kept = {"chats": {"100000000": {"watch": {"job_id": "6110a32aa945", "tries": 1}}}}
 
     stored = client.send_json("PUT", "/state/some-caller", kept)
