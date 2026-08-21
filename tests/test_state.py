@@ -131,6 +131,125 @@ def test_a_note_that_was_damaged_on_disk_is_reported_rather_than_guessed(addon, 
     assert "could not be read back" in answer.json["error"]
 
 
+def test_a_patch_changes_one_part_and_leaves_the_rest_alone(client):
+    client.send_json("PUT", "/state/bot", {
+        "chats": {"100000000": {"stage": "files"}, "100000001": {"delivered": "22-08.zip"}}})
+
+    answer = client.send_json("PATCH", "/state/bot", {"chats": {"100000000": {"stage": "open"}}})
+
+    assert answer.status == 200
+    assert answer.json["value"] == {
+        "chats": {"100000000": {"stage": "open"}, "100000001": {"delivered": "22-08.zip"}}
+    }, "the other conversation is exactly as it was"
+
+
+def test_a_patch_answers_with_what_is_there_now(client):
+    client.send_json("PUT", "/state/bot", {"stage": "date"})
+
+    answer = client.send_json("PATCH", "/state/bot", {"date": "22.08"})
+
+    assert answer.json["value"] == {"stage": "date", "date": "22.08"}
+    written = json.dumps(answer.json["value"], ensure_ascii=False).encode()
+    assert answer.json["bytes"] == len(written)
+
+
+def test_a_null_in_a_patch_takes_the_field_out(client):
+    client.send_json("PUT", "/state/bot", {"stage": "open", "session": "abc", "date": "22.08"})
+
+    client.send_json("PATCH", "/state/bot", {"session": None, "stage": "done"})
+
+    assert client.get("/state/bot").json["value"] == {"stage": "done", "date": "22.08"}
+
+
+def test_taking_out_a_field_that_was_never_there_is_not_an_error(client):
+    client.send_json("PUT", "/state/bot", {"stage": "date"})
+
+    answer = client.send_json("PATCH", "/state/bot", {"session": None})
+
+    assert answer.status == 200
+    assert answer.json["value"] == {"stage": "date"}
+
+
+def test_a_patch_replaces_a_list_rather_than_adding_to_it(client):
+    client.send_json("PUT", "/state/bot", {"files": ["1-groom.docx", "2-bride.docx"]})
+
+    client.send_json("PATCH", "/state/bot", {"files": []})
+
+    assert client.get("/state/bot").json["value"] == {"files": []}
+
+
+def test_a_patch_can_put_an_object_where_a_plain_value_was(client):
+    client.send_json("PUT", "/state/bot", {"watch": "6110a32aa945"})
+
+    client.send_json("PATCH", "/state/bot", {"watch": {"job_id": "6110a32aa945", "tries": 0}})
+
+    assert client.get("/state/bot").json["value"] == {
+        "watch": {"job_id": "6110a32aa945", "tries": 0}}
+
+
+def test_a_patch_on_a_note_nobody_wrote_writes_it(client):
+    answer = client.send_json("PATCH", "/state/first-time", {"chats": {"100000000": {}}})
+
+    assert answer.status == 200
+    assert client.get("/state/first-time").json["value"] == {"chats": {"100000000": {}}}
+
+
+def test_two_patches_at_once_both_survive(addon, client):
+    """The race this endpoint exists for, run for real.
+
+    Two callers change two different conversations in the same instant. With GET and PUT
+    the one that writes second puts its own copy — taken before the other's change — over
+    the lot, and the first change is gone. Here the add-on is the one holding both.
+    """
+    import threading
+
+    client.send_json("PUT", "/state/bot", {"chats": {}})
+    ready, done = threading.Barrier(9), []
+
+    def patch(which):
+        ready.wait()
+        answer = client.send_json("PATCH", "/state/bot",
+                                  {"chats": {f"10000000{which}": {"stage": "date"}}})
+        done.append(answer.status)
+
+    workers = [threading.Thread(target=patch, args=(n,)) for n in range(8)]
+    for worker in workers:
+        worker.start()
+    ready.wait()
+    for worker in workers:
+        worker.join(timeout=30)
+
+    assert done == [200] * 8
+    assert sorted(client.get("/state/bot").json["value"]["chats"]) == \
+        [f"10000000{n}" for n in range(8)], "every one of the eight is there"
+
+
+def test_a_patch_that_would_make_the_note_too_large_is_refused(addon, client):
+    client.send_json("PUT", "/state/bot", {"stage": "date"})
+
+    answer = client.send_json("PATCH", "/state/bot", {"padding": "x" * addon.MAX_STATE_BYTES})
+
+    assert answer.status == 413
+    assert client.get("/state/bot").json["value"] == {"stage": "date"}, "and nothing changed"
+
+
+def test_a_patch_must_be_a_json_object(client):
+    answer = client.send_json("PATCH", "/state/bot", ["not", "an", "object"])
+
+    assert answer.status == 400
+    assert "must be a JSON object" in answer.json["error"]
+
+
+def test_a_note_that_is_not_an_object_cannot_be_patched(addon, client):
+    addon.STATE_DIR.mkdir(parents=True, exist_ok=True)
+    (addon.STATE_DIR / "bot.json").write_text("[1, 2, 3]")
+
+    answer = client.send_json("PATCH", "/state/bot", {"stage": "date"})
+
+    assert answer.status == 409
+    assert "cannot be patched" in answer.json["error"]
+
+
 def test_a_stray_file_in_the_folder_is_not_offered_as_a_key(addon, client):
     addon.STATE_DIR.mkdir(parents=True, exist_ok=True)
     (addon.STATE_DIR / ".hidden.json").write_text("{}")

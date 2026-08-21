@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.20.0
+
+- **`PATCH /state/<key>` changes part of a note and leaves the rest alone.** A caller
+  keeping a record per conversation under one key had to read the whole note, change its
+  own part and write all of it back — and between its read and its write another of its own
+  runs may have written, so that change went back to what it was minutes ago. It is what
+  cost one bot a pair's afternoon twice over. The body is laid over what is stored, as deep
+  as it goes: what is not mentioned is left alone, `null` takes a field out, a list or a
+  number replaces what was there. The read and the write happen under one lock, so two
+  callers changing two different records in the same instant both keep their change, and
+  the answer carries the note as it now stands.
+
 ## 1.19.0
 
 - **A turn says which conversation it is in from its first seconds.** `session_id` used to

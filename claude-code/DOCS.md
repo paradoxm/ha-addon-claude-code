@@ -342,6 +342,7 @@ with `411` rather than silently arriving empty.
 | `DELETE` | `/jobs/<id>` | Delete the job and its files |
 | `GET` | `/jobs` | All jobs, newest first |
 | `PUT` | `/state/<key>` | Keep a JSON object of your own under a name you choose |
+| `PATCH` | `/state/<key>` | Change part of it and leave the rest alone. `null` takes a field out |
 | `GET` | `/state/<key>` | Read it back exactly as it was left |
 | `DELETE` | `/state/<key>` | Forget it |
 | `GET` | `/state` | The keys in use |
@@ -420,6 +421,17 @@ and wherever it runs may not keep that honestly. An automation platform that han
 run a copy of its stored data and writes the copy back when the run ends will undo a note
 made by another run that started later — quietly, and only sometimes. Here a read returns
 what is on disk and a write replaces it, both at once.
+
+A caller keeping notes about several things under one key — a record per conversation,
+say — should change them with `PATCH` rather than `PUT`. `PUT` replaces the whole note, so
+the caller has to read it, change its own part and write all of it back; between its read
+and its write another of its own runs may have written, and that change goes back to what
+it was minutes ago. A `PATCH` body is laid over what is stored, field by field and as deep
+as it goes: what is not mentioned is left alone, a field set to `null` is taken out, and a
+list or a number replaces whatever was there. The reading and the writing happen under one
+lock inside the add-on, so two callers changing two different records at the same instant
+both keep their change. The answer carries the whole note as it now stands, so a caller
+that needs to know what it ended up with does not have to ask again.
 
 While a turn is in flight, `GET /chat` returns the words so far as `partial` on the
 running entry in `pending`, and cuts the transcript back to the last thing the user
