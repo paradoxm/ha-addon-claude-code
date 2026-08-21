@@ -339,6 +339,11 @@ def write_text_atomic(path: Path, text: str) -> None:
 # give it back exactly as it was left. Small on purpose; this is not a database.
 STATE_DIR = DATA / "state"
 MAX_STATE_BYTES = 512 * 1024
+# One lock across every write, and across the read and the write a patch does. Without it
+# two callers changing different parts of the same note in the same instant both read the
+# old copy, and whichever writes second loses the other's change — which is the whole
+# reason PATCH exists here rather than the caller doing it with GET and PUT.
+STATE_LOCK = threading.Lock()
 
 
 def state_path(key: str) -> Path:
@@ -363,8 +368,50 @@ def write_state(key: str, value: dict) -> dict:
     if len(text.encode()) > MAX_STATE_BYTES:
         raise ApiError(413, f"a note must be under {MAX_STATE_BYTES // 1024} kb")
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    write_text_atomic(path, text)
+    # The same lock the patch below takes, so a wholesale write cannot land in the middle
+    # of somebody's read-change-write and be lost.
+    with STATE_LOCK:
+        write_text_atomic(path, text)
     return {"key": key, "bytes": len(text.encode())}
+
+
+def merged(stored, patch):
+    """`patch` laid over `stored`, RFC 7386: a null removes, anything else replaces.
+
+    Only objects merge. A list, a number, a string is a value and is replaced whole —
+    a caller that wants one item of a list changed sends the list.
+    """
+    if not isinstance(patch, dict) or not isinstance(stored, dict):
+        return patch
+    result = dict(stored)
+    for name, value in patch.items():
+        if value is None:
+            result.pop(name, None)
+        else:
+            result[name] = merged(result.get(name), value)
+    return result
+
+
+def patch_state(key: str, patch: dict) -> dict:
+    """Lay a patch over what is stored, under a lock, and answer what is there now.
+
+    A caller keeping notes about several things in one key — a bot with a record per
+    conversation — cannot use PUT for it: between its read and its write another of its
+    own runs has written, and the whole note goes back as it was minutes ago. Here it
+    sends only the part it changed and the add-on is the one that does not lose the rest.
+    """
+    path = state_path(key)
+    with STATE_LOCK:
+        stored = read_json(path) if path.is_file() else {}
+        if not isinstance(stored, dict):
+            raise ApiError(409, f"{key} does not hold an object, so it cannot be patched")
+        value = merged(stored, patch)
+        text = json.dumps(value, ensure_ascii=False)
+        if len(text.encode()) > MAX_STATE_BYTES:
+            raise ApiError(413, f"a note must be under {MAX_STATE_BYTES // 1024} kb")
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(path, text)
+    return {"key": key, "bytes": len(text.encode()), "value": value}
 
 
 def forget_state(key: str) -> dict:
@@ -3007,6 +3054,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, read_state(parts[1]))
             if method == "PUT":
                 return self._send(200, write_state(parts[1], self._json_body()))
+            if method == "PATCH":
+                return self._send(200, patch_state(parts[1], self._json_body()))
             if method == "DELETE":
                 return self._send(200, forget_state(parts[1]))
 
@@ -3180,6 +3229,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         self._dispatch("PUT")
+
+    def do_PATCH(self):
+        self._dispatch("PATCH")
 
     def do_DELETE(self):
         self._dispatch("DELETE")
