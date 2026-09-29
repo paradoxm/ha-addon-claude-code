@@ -254,6 +254,45 @@ def test_a_job_carries_the_model_effort_and_mode_it_was_asked_for(client):
     assert job["permission_mode"] == "plan"
 
 
+def spawned_argv(addon, monkeypatch):
+    """The command line the turn is really spawned with."""
+    seen = []
+    spawn = addon.subprocess.Popen
+
+    def watch(argv, *args, **kwargs):
+        if "-p" in argv:
+            seen.append(list(argv))
+        return spawn(argv, *args, **kwargs)
+
+    monkeypatch.setattr(addon.subprocess, "Popen", watch)
+    return seen
+
+
+def test_a_job_that_names_a_model_is_spawned_with_it(addon, client, monkeypatch):
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(client, "with a model of its own", model="haiku", start=True)
+    wait_for_status(client, job["id"], "done")
+
+    assert len(argv) == 1, argv
+    assert "--model" in argv[0]
+    assert argv[0][argv[0].index("--model") + 1] == "haiku"
+
+
+def test_default_is_not_a_model_but_the_absence_of_one(addon, client, monkeypatch):
+    """The CLI has no model called `default`; leaving the flag off is what lets Claude
+    Code use the one it recommends, which is the whole point of the value."""
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(client, "with no model at all", model=addon.NO_MODEL, start=True)
+    assert job["model"] == "default"
+    wait_for_status(client, job["id"], "done")
+
+    assert len(argv) == 1, argv
+    assert "--model" not in argv[0]
+    assert "default" not in argv[0]
+
+
 def test_a_job_falls_back_to_the_add_on_s_own_defaults(addon, client):
     job = create_job(client, "with no settings")
 

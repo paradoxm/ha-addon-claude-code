@@ -201,7 +201,7 @@ Uninstalling the add-on does remove the volume. If a skill exists only here, use
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `model` | `opus` | Default for jobs that do not name one. See below. |
+| `model` | `default` | Default for jobs that do not name one. See below. |
 | `effort` | `medium` | How long Claude thinks before answering: `low`, `medium`, `high`, `xhigh`, `max`. `medium` is the CLI's own default. |
 | `permission_mode` | `manual` | What the agent may do unasked: `manual` asks, `plan` only plans, `acceptEdits` writes files, `auto` and `dontAsk` run tools freely. `bypassPermissions` is deliberately not offered. |
 | `api_token` | empty | Required before the API accepts traffic from the network. See below. |
@@ -220,17 +220,19 @@ available, not the account's entitlements.
 
 ### Choosing a model
 
-The option is a list of the four aliases the CLI accepts:
-
-| Alias | Tier |
+| Value | What it is |
 | --- | --- |
+| `default` | whatever Claude Code itself recommends |
 | `opus` | most capable |
 | `sonnet` | cheaper and faster |
 | `haiku` | cheapest and fastest |
 | `fable` | most expensive |
 
-Aliases rather than pinned ids on purpose: each always points at the newest model
-of its tier, so the list cannot go stale.
+`default` is not a model. It is the absence of `--model`, which is what the app does
+when nothing is picked there: the CLI uses the model it recommends, and a release
+that moves the recommendation moves this with it. The rest are aliases rather than
+pinned ids, each pointing at the newest model of its tier — so the list cannot go
+stale either way, but only `default` follows a change of tier.
 
 **This is only the default.** Any job can override it, which is the point when a
 task is simple enough that the cheapest tier will do:

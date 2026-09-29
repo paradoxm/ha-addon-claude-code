@@ -109,7 +109,13 @@ SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 UPDATE_TARGET = re.compile(r"latest|stable|[0-9]+(\.[0-9]+)*")
 # What the selector offers. Validation stays wider on purpose: an API caller may
 # pin a full name such as claude-sonnet-5, which an alias cannot express.
-MODEL_ALIASES = ("opus", "sonnet", "haiku", "fable")
+#
+# `default` is not a name the CLI knows. It stands for the absence of --model, which
+# leaves the choice to Claude Code itself — the same thing the app's own default does.
+# An alias tracks the newest model of its tier; only this follows the recommendation
+# itself, wherever a release moves it.
+NO_MODEL = "default"
+MODEL_ALIASES = (NO_MODEL, "opus", "sonnet", "haiku", "fable")
 SAFE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
 # Exactly what `claude --effort` documents. Anything else is refused rather than
 # handed to the CLI, where an unknown value aborts the run.
@@ -226,7 +232,7 @@ def write_json(path: Path, data: dict) -> None:
 
 OPTIONS = read_json(OPTIONS_PATH, {}) or {}
 API_TOKEN = str(OPTIONS.get("api_token") or "")
-DEFAULT_MODEL = str(OPTIONS.get("model") or "opus")
+DEFAULT_MODEL = str(OPTIONS.get("model") or NO_MODEL)
 TIMEOUT_SEC = int(OPTIONS.get("timeout_minutes") or 90) * 60
 AUTO_UPDATE = bool(OPTIONS.get("auto_update", True))
 UPDATE_CHANNEL = str(OPTIONS.get("update_channel") or "latest")
@@ -1440,8 +1446,6 @@ def run_job(job_id: str) -> None:
     argv = [
         "claude",
         "-p",
-        "--model",
-        job["model"],
         "--permission-mode",
         job.get("permission_mode") or DEFAULT_PERMISSION_MODE,
         # Skills run their own scripts, so Bash has to be allowed. This is a
@@ -1457,6 +1461,10 @@ def run_job(job_id: str) -> None:
         "--include-partial-messages",
         "--verbose",
     ]
+    # Named last because `default` is a name for not naming one: the CLI has no such
+    # model, and with the flag left off it uses whatever it recommends at the time.
+    if job.get("model") and job["model"] != NO_MODEL:
+        argv += ["--model", job["model"]]
     if job.get("effort"):
         argv += ["--effort", job["effort"]]
     # Resolved now rather than at queue time, so a message that waited its turn

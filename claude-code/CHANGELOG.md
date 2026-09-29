@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.21.0
+
+- **A model called `default`, which is no model at all.** Picking it leaves `--model` off
+  the command, so the CLI uses the one Claude Code recommends — the same thing the app
+  does when nothing is picked in it. The four aliases each track the newest model of their
+  tier and always did, but a tier is still a choice made once and kept: an add-on set to
+  `opus` a year ago is on whatever opus means today and nothing else, whatever the
+  recommendation has become since. This is the value that keeps following it. It is what a
+  new install now starts on; an add-on already running keeps the option it was saved with
+  until it is changed by hand.
+
 ## 1.20.0
 
 - **`PATCH /state/<key>` changes part of a note and leaves the rest alone.** A caller

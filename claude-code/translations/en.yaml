@@ -3,9 +3,11 @@ configuration:
   model:
     name: Default model
     description: >-
-      Used by any job that does not name one. Aliases track the newest model of
-      each tier: opus is the most capable, sonnet is cheaper and faster, haiku is
-      the cheapest and fastest, fable is the most expensive. A request may send a
+      Used by any job that does not name one. default leaves the choice to Claude
+      Code, which is what the app does when nothing is picked there — the model it
+      recommends, whichever one a release makes that. The rest name a tier and track
+      its newest model: opus is the most capable, sonnet is cheaper and faster, haiku
+      is the cheapest and fastest, fable is the most expensive. A request may send a
       full model name such as claude-sonnet-5 instead.
   effort:
     name: Default reasoning effort
