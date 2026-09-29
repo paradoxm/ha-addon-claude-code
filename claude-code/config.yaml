@@ -1,6 +1,6 @@
 ---
 name: Claude Code
-version: "1.20.0"
+version: "1.21.0"
 slug: claude_code
 description: >-
   Claude Code CLI with a console for talking to it, your own skills, and an HTTP
@@ -32,7 +32,7 @@ ports:
 ports_description:
   7682/tcp: HTTP API for other add-ons. Only listens when api_token is set.
 options:
-  model: opus
+  model: default
   effort: medium
   permission_mode: manual
   timeout_minutes: 90
@@ -43,9 +43,10 @@ options:
   auto_update: true
   update_channel: latest
 schema:
-  # Aliases rather than pinned ids: each one tracks the newest model of its tier,
-  # so this list does not go stale. A job may still send a full model name.
-  model: list(opus|sonnet|haiku|fable)
+  # default is not a model but the absence of one: no --model, so Claude Code picks
+  # the model it recommends now. The rest are aliases rather than pinned ids, each
+  # tracking the newest model of its tier. A job may still send a full model name.
+  model: list(default|opus|sonnet|haiku|fable)
   # What `claude --effort` documents. medium is the CLI's own default.
   effort: list(low|medium|high|xhigh|max)
   # bypassPermissions is deliberately not offered: it removes every check, and
