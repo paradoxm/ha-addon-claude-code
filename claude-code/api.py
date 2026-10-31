@@ -31,7 +31,6 @@ import hmac
 import io
 import json
 import os
-import queue
 import re
 import shutil
 import signal
@@ -248,6 +247,10 @@ TIMEOUT_SEC = int(OPTIONS.get("timeout_minutes") or 90) * 60
 AUTO_UPDATE = bool(OPTIONS.get("auto_update", True))
 UPDATE_CHANNEL = str(OPTIONS.get("update_channel") or "latest")
 DEFAULT_EFFORT = str(OPTIONS.get("effort") or "")
+# How many turns may run at once. The CLI shares one sign-in between any number of its
+# processes, and so does this add-on since it renews under the CLI's lock; what is left to
+# ration is the box's memory, at a few hundred megabytes a turn.
+MAX_PARALLEL = int(OPTIONS.get("max_parallel") or 5)
 # How full a window may get before work stops. One figure per window, because the two are
 # not the same question: the five-hour window refills while the day goes on, so spending it
 # to the brim costs an hour of waiting, while the week is what a fortnight of work has to
@@ -479,7 +482,7 @@ def write_editable(key: str, text: str) -> dict:
             json.loads(text)
         except ValueError as exc:
             raise ApiError(400, f"not valid JSON: {exc}") from exc
-    if entry["busy_conflicts"] and RUNNING_JOB is not None:
+    if entry["busy_conflicts"] and turns_running():
         raise ApiError(409, "Claude is working; this file is its own and would be overwritten")
 
     path = entry["path"]
@@ -961,27 +964,70 @@ def header_safe(value: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# one CLI at a time
+# turns in flight
 # --------------------------------------------------------------------------- #
 
-# Held by whoever runs the `claude` binary — the job worker or an update. One lock
-# for one resource: guarding jobs with a flag and updates with a lock left both
-# directions unprotected, since a queued job starts after the flag was checked.
+# Held by an update for as long as it replaces the binary. A turn starts only while it is
+# free, and an update takes it only while no turn runs — both decided under SLOTS, so
+# neither can slip in between the other's check and its start.
 CLI_LOCK = threading.Lock()
 
-JOB_QUEUE: "queue.Queue[str]" = queue.Queue()
 JOB_LOCK = threading.Lock()
 
-# Purely for display, and for refusing to delete a job that is still running.
-RUNNING_JOB = None
-# The process of the turn in flight, so it can be stopped, and the ids of turns that
-# were stopped, so the outcome reads as stopped rather than as a crash.
-RUNNING_PROC: "subprocess.Popen | None" = None
+
+class Turn:
+    """One turn in flight: its CLI, once it exists, and when it was frozen, if it was.
+
+    A frozen run spends nothing and loses nothing: the process and its subagents are still
+    there, holding everything they had worked out, and its timeout stops counting while
+    they are stopped.
+    """
+
+    def __init__(self) -> None:
+        self.proc: subprocess.Popen | None = None
+        self.paused_at: float | None = None
+
+
+# Everything below is read and written under SLOTS, and a worker waits on it for a slot.
+SLOTS = threading.Condition()
+# Jobs waiting to start, oldest first, and the turns running now by job id.
+PENDING: list[str] = []
+RUNNING: dict[str, Turn] = {}
+# The conversations a running turn is in. Two turns of one conversation would both resume
+# the same transcript and write it at once, so a conversation runs one turn at a time and
+# its next one waits — while a turn of any other conversation goes ahead.
+LANES: set[str] = set()
+# The ids of turns that were stopped, so the outcome reads as stopped rather than a crash.
 CANCELLED: set = set()
-# When the turn in flight was frozen, if it was. A frozen run spends nothing and
-# loses nothing: the process and its subagents are still there, holding everything
-# they had worked out, and the timeout below stops counting while they are stopped.
-PAUSED_AT: float | None = None
+
+
+def lane_of(job: dict) -> str:
+    """Which conversation a job belongs to, for keeping its turns in order.
+
+    The console's own turns continue whatever conversation it is showing when they start,
+    so they are all one lane. A turn that names a conversation is in that one's. Anything
+    else — a one-off job, a caller's first message — opens something new and is its own.
+    """
+    if job.get("chat") and job.get("source", "console") == "console" and not job.get(
+        "resumed_from"
+    ):
+        return "console"
+    return str(job.get("resumed_from") or job["id"])
+
+
+def turn_of(job_id: str) -> Turn | None:
+    with SLOTS:
+        return RUNNING.get(job_id)
+
+
+def turns_running() -> list[str]:
+    with SLOTS:
+        return list(RUNNING)
+
+
+def is_paused(job_id: str) -> bool:
+    turn = turn_of(job_id)
+    return turn is not None and turn.paused_at is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -1192,7 +1238,9 @@ def start_job(job_id: str) -> dict:
             raise ApiError(409, f"job is already {job['status']}")
         job["status"] = "queued"
         write_job(job)
-    JOB_QUEUE.put(job_id)
+    with SLOTS:
+        PENDING.append(job_id)
+        SLOTS.notify_all()
     return job
 
 
@@ -1202,8 +1250,12 @@ def run_claude(
     argv: list,
     prompt: str,
     on_session: Callable[[str], None] | None = None,
+    turn: Turn | None = None,
 ) -> int:
     """Run the CLI, streaming its output to a file as it arrives.
+
+    `turn` is where the process is published while it runs, so it can be frozen or
+    stopped from another thread.
 
     `workdir` is the CLI's working directory, which is what scopes its session
     history; `bookkeeping` is where this add-on keeps its own files, so a shared
@@ -1223,7 +1275,7 @@ def run_claude(
     cancellation can take its subagents with it. subprocess.run only SIGKILLs the
     direct child, which left subagents running for the rest of the container's life.
     """
-    global RUNNING_PROC, PAUSED_AT
+    turn = turn or Turn()
     with open(bookkeeping / "claude.log", "wb") as stderr, open(
         bookkeeping / "stream.jsonl", "wb"
     ) as stream:
@@ -1240,7 +1292,7 @@ def run_claude(
                 stderr=stderr,
                 start_new_session=True,
             )
-            RUNNING_PROC = process
+            turn.proc = process
         stdin = process.stdin
         if stdin is not None:
             stdin.write(prompt.encode())
@@ -1261,14 +1313,14 @@ def run_claude(
                     if session:
                         on_session(session)
                         on_session = None
-                if PAUSED_AT is not None:
+                if turn.paused_at is not None:
                     deadline += 1
                 if time.monotonic() >= deadline:
                     kill_tree(process, signal.SIGKILL)
                     raise subprocess.TimeoutExpired(argv, TIMEOUT_SEC)
         finally:
-            RUNNING_PROC = None
-            PAUSED_AT = None
+            turn.proc = None
+            turn.paused_at = None
 
 
 def kill_tree(process: subprocess.Popen, sig: int) -> None:
@@ -1518,7 +1570,9 @@ def run_job(job_id: str) -> None:
             named = set_session_title(session, job["title"])
 
     try:
-        returncode = run_claude(workdir, bookkeeping, argv, job["prompt"], publish)
+        returncode = run_claude(
+            workdir, bookkeeping, argv, job["prompt"], publish, turn_of(job_id)
+        )
         job["exit_code"] = returncode
 
         # The CLI reports failures in its output rather than on stderr: a run with
@@ -1593,26 +1647,50 @@ def run_job(job_id: str) -> None:
     print(f"[api] job {job_id} {job['status']}", flush=True)
 
 
-def worker() -> None:
-    global RUNNING_JOB
-    while True:
-        job_id = JOB_QUEUE.get()
-        # It may have been stopped, or deleted, while it waited.
+def take_next_job() -> tuple[str, str] | None:
+    """The oldest waiting job that may start now, claimed — or None. Call under SLOTS.
+
+    Not while an update holds the binary, and not past MAX_PARALLEL. A job whose
+    conversation already has a turn running is passed over for now, and so is every later
+    job of that conversation: oldest first within a lane is what keeps a conversation in
+    order, and passing over it is what lets every other lane carry on meanwhile.
+    """
+    if CLI_LOCK.locked() or len(RUNNING) >= MAX_PARALLEL:
+        return None
+    for job_id in list(PENDING):
         state = read_json(JOBS_DIR / job_id / "job.json") or {}
+        # It may have been stopped, or deleted, while it waited.
         if state.get("status") != "queued":
-            JOB_QUEUE.task_done()
+            PENDING.remove(job_id)
             continue
-        # Blocks while an update is installing, which is the point: the binary
-        # must not be replaced under a run, nor a run started mid-install.
-        with CLI_LOCK:
-            RUNNING_JOB = job_id
-            try:
-                run_job(job_id)
-            except Exception as exc:  # noqa: BLE001 - a bad job must not kill the worker
-                print(f"[api] job {job_id} crashed: {exc}", flush=True)
-            finally:
-                RUNNING_JOB = None
-                JOB_QUEUE.task_done()
+        lane = lane_of(state)
+        if lane in LANES:
+            continue
+        PENDING.remove(job_id)
+        LANES.add(lane)
+        RUNNING[job_id] = Turn()
+        return job_id, lane
+    return None
+
+
+def worker() -> None:
+    """One of MAX_PARALLEL: takes the next job that may start, runs it, and looks again."""
+    while True:
+        with SLOTS:
+            claimed = take_next_job()
+            while claimed is None:
+                SLOTS.wait()
+                claimed = take_next_job()
+        job_id, lane = claimed
+        try:
+            run_job(job_id)
+        except Exception as exc:  # noqa: BLE001 - a bad job must not kill the worker
+            print(f"[api] job {job_id} crashed: {exc}", flush=True)
+        finally:
+            with SLOTS:
+                RUNNING.pop(job_id, None)
+                LANES.discard(lane)
+                SLOTS.notify_all()
 
 
 # The moment between a job being marked "running" and its CLI existing: the worker writes
@@ -1623,12 +1701,14 @@ def worker() -> None:
 SPAWN_GRACE_SEC = 5.0
 
 
-def process_of_the_running_turn() -> "subprocess.Popen | None":
-    """The CLI of the turn in flight, waiting out the moment before it exists."""
+def process_of_the_running_turn(job_id: str) -> "subprocess.Popen | None":
+    """The CLI of a turn in flight, waiting out the moment before it exists."""
     deadline = time.monotonic() + SPAWN_GRACE_SEC
-    while RUNNING_PROC is None and RUNNING_JOB is not None and time.monotonic() < deadline:
+    turn = turn_of(job_id)
+    while turn is not None and turn.proc is None and time.monotonic() < deadline:
         time.sleep(0.02)
-    return RUNNING_PROC
+        turn = turn_of(job_id)
+    return turn.proc if turn is not None else None
 
 
 def freeze_job(
@@ -1642,29 +1722,29 @@ def freeze_job(
     to pay again because a limit is about to be reached. The whole process group is
     signalled, so the subagents freeze with it.
     """
-    global PAUSED_AT
     job = read_job(job_id)
-    process = process_of_the_running_turn()
-    if job_id != RUNNING_JOB or process is None:
+    process = process_of_the_running_turn(job_id)
+    turn = turn_of(job_id)
+    if turn is None or process is None:
         raise ApiError(409, f"job is {job.get('status')}; only a running turn can be frozen")
 
     if freeze:
-        if PAUSED_AT is not None:
+        if turn.paused_at is not None:
             return {**job, "paused": True, "changed": False}
         if process.poll() is not None:
             # It finished between the decision and here; there is nothing to stop, and
             # saying otherwise would leave a pause on a turn that is already over.
             raise ApiError(409, "the turn finished; there is nothing to freeze")
         kill_tree(process, signal.SIGSTOP)
-        PAUSED_AT = time.monotonic()
+        turn.paused_at = time.monotonic()
         job = update_job(job_id, paused_at=now(), paused_reason=reason, resumes_at=until)
         print(f"[api] job {job_id} frozen", flush=True)
         return {**job, "paused": True, "changed": True}
 
-    if PAUSED_AT is None:
+    if turn.paused_at is None:
         return {**job, "paused": False, "changed": False}
     kill_tree(process, signal.SIGCONT)
-    PAUSED_AT = None
+    turn.paused_at = None
     # Let go by hand against the guard's advice: it does not get to overrule that.
     by_hand = not by_guard and job.get("paused_reason") == "limits"
     job = update_job(
@@ -1757,7 +1837,8 @@ def hold_for_limits(job_id: str) -> dict | None:
     if job.get("limit_override"):
         return None
 
-    frozen_for_limits = PAUSED_AT is not None and job.get("paused_reason") == "limits"
+    paused = is_paused(job_id)
+    frozen_for_limits = paused and job.get("paused_reason") == "limits"
     # A reading that cannot be had is not a reason to stop working — and it is not a reason
     # to keep a turn stopped either. Failing open on the way in and closed on the way out
     # would leave a frozen turn frozen for good the moment the endpoint went quiet.
@@ -1767,7 +1848,7 @@ def hold_for_limits(job_id: str) -> dict | None:
         return None
 
     if not usage.get("enough", True):
-        if PAUSED_AT is not None:
+        if paused:
             return None
         when = parse_when(worst.get("resets_at"))
         if when and when - datetime.now(UTC) > timedelta(seconds=MAX_HOLD_SEC):
@@ -1832,28 +1913,33 @@ def limit_watch_once() -> float:
         keep_the_sign_in_warm()
     except Exception as exc:  # noqa: BLE001 - the watcher must outlive any one renewal
         print(f"[api] keeping the sign-in: {type(exc).__name__}: {exc}", flush=True)
-    job_id = RUNNING_JOB
-    if not GUARD_LIMITS or job_id is None:
+    running = turns_running()
+    if not GUARD_LIMITS or not running:
         return WATCH_IDLE_SEC
-    try:
-        hold_for_limits(job_id)
-        worst = read_usage().get("worst")
-    except Exception as exc:  # noqa: BLE001 - the watcher must outlive any one reading
-        print(f"[api] limit watch: {type(exc).__name__}: {exc}", flush=True)
-        worst = None
+    # One allowance for all of them, so every turn is judged on the same reading: the
+    # reading is cached, and only the first of these asks for it.
+    worst = None
+    for job_id in running:
+        try:
+            hold_for_limits(job_id)
+            worst = read_usage().get("worst")
+        except Exception as exc:  # noqa: BLE001 - the watcher must outlive any one reading
+            print(f"[api] limit watch: {type(exc).__name__}: {exc}", flush=True)
     # While frozen, look again once the window is due back rather than on the ladder.
-    return THAW_GRACE_SEC if PAUSED_AT is not None else watch_interval(worst)
+    if any(is_paused(job_id) for job_id in running):
+        return THAW_GRACE_SEC
+    return watch_interval(worst)
 
 
 def limit_watch() -> None:
     """The loop behind limit_watch_once, on its own thread."""
     while True:
         wait = limit_watch_once()
-        watching = RUNNING_JOB
+        watching = turns_running()
         slept = 0.0
         # Broken up so a turn ending is noticed at once rather than a quarter of an hour
         # later, and so a fresh turn is looked at when it starts rather than inherited.
-        while slept < wait and watching == RUNNING_JOB:
+        while slept < wait and watching == turns_running():
             time.sleep(min(WATCH_IDLE_SEC, wait - slept))
             slept += WATCH_IDLE_SEC
 
@@ -1864,31 +1950,34 @@ def cancel_job(job_id: str) -> dict:
     if job.get("status") in TERMINAL_STATUSES:
         raise ApiError(409, f"job is already {job['status']}")
 
-    if job_id != RUNNING_JOB:
-        # Still queued: mark it terminal and let the worker skip it. The queue
-        # itself cannot have an entry plucked out of the middle.
-        with JOB_LOCK:
-            job = read_job(job_id)
-            job["status"] = "failed"
-            job["error"] = "stopped before it started"
-            job["finished_at"] = now()
-            write_job(job)
-        print(f"[api] job {job_id} dropped from the queue", flush=True)
-        return job
+    with SLOTS:
+        # Still waiting: taken out of the line and marked terminal, both under the lock a
+        # worker claims a job under, so it cannot be started halfway through being stopped.
+        if job_id not in RUNNING:
+            if job_id in PENDING:
+                PENDING.remove(job_id)
+            with JOB_LOCK:
+                job = read_job(job_id)
+                job["status"] = "failed"
+                job["error"] = "stopped before it started"
+                job["finished_at"] = now()
+                write_job(job)
+            print(f"[api] job {job_id} dropped from the queue", flush=True)
+            return job
 
     CANCELLED.add(job_id)
     # The same wait as a freeze: a turn cancelled in the moment before its CLI exists used
     # to be left running, with nothing to signal.
-    process = process_of_the_running_turn()
-    if process is None:
+    process = process_of_the_running_turn(job_id)
+    turn = turn_of(job_id)
+    if process is None or turn is None:
         return read_job(job_id)
 
     # A frozen process would not act on the stop until it was let go, so it is let go
     # first and then asked to end.
-    global PAUSED_AT
-    if PAUSED_AT is not None:
+    if turn.paused_at is not None:
         kill_tree(process, signal.SIGCONT)
-        PAUSED_AT = None
+        turn.paused_at = None
 
     # SIGTERM is what the CLI documents for an abort: it ends the turn, stops any
     # Bash it started, and runs SessionEnd hooks.
@@ -2318,6 +2407,13 @@ def reconcile_interrupted_update() -> None:
             )
 
 
+def release_cli() -> None:
+    """Give the binary back, and wake the workers that were waiting on it."""
+    with SLOTS:
+        CLI_LOCK.release()
+        SLOTS.notify_all()
+
+
 def _run_update(target: str, state: dict) -> None:
     """Runs `claude install <target>`. Owns releasing CLI_LOCK."""
     try:
@@ -2353,7 +2449,7 @@ def _run_update(target: str, state: dict) -> None:
         try:
             write_json(UPDATE_STATE_PATH, state)
         finally:
-            CLI_LOCK.release()
+            release_cli()
 
     if state["status"] == "done":
         print(f"[api] Claude Code {state['previous']} -> {state['installed']}", flush=True)
@@ -2432,8 +2528,11 @@ def start_update(target: str, wait: bool = False) -> dict:
     """Begin an update. Returns the live state at once unless `wait`."""
     if not UPDATE_TARGET.fullmatch(target):
         raise ApiError(400, f"target must be 'latest', 'stable' or a version: {target!r}")
-    if not CLI_LOCK.acquire(blocking=False):
-        raise ApiError(409, "the CLI is busy with a job or another update")
+    # Under SLOTS, where a worker decides to start a turn: no turn may be running, and none
+    # may start once the lock is taken — the binary must not be replaced under a run.
+    with SLOTS:
+        if RUNNING or not CLI_LOCK.acquire(blocking=False):
+            raise ApiError(409, "the CLI is busy with a job or another update")
 
     # Written here, synchronously, so the caller and any page reload see "running"
     # immediately. Doing it in the worker meant the first poll could still read
@@ -2464,7 +2563,7 @@ def start_update(target: str, wait: bool = False) -> dict:
         handed_off = True
     finally:
         if not handed_off:
-            CLI_LOCK.release()
+            release_cli()
     return state
 
 
@@ -2971,7 +3070,7 @@ class Handler(BaseHTTPRequestHandler):
                         job["partial"] = stream_text(JOBS_DIR / job["id"])
                         # A frozen turn looks exactly like a working one otherwise, and
                         # the console would show a spinner for hours with no way out.
-                        job["paused"] = job["id"] == RUNNING_JOB and PAUSED_AT is not None
+                        job["paused"] = is_paused(job["id"])
                         running = job
 
                 turns, notices = read_conversation(session) if session else ([], [])
@@ -3183,7 +3282,7 @@ class Handler(BaseHTTPRequestHandler):
                     job["activity"] = stream_activity(JOBS_DIR / safe_name(parts[1]))
                     # Whether it is moving at all: a caller showing a status to somebody
                     # must not say "working" about a turn that stands frozen.
-                    job["paused"] = parts[1] == RUNNING_JOB and PAUSED_AT is not None
+                    job["paused"] = is_paused(parts[1])
                 return self._send(200, job)
             if method == "DELETE":
                 job = read_job(parts[1])
@@ -3245,9 +3344,11 @@ class Handler(BaseHTTPRequestHandler):
             "update": update,
             "logged_in": (HOME / ".claude" / ".credentials.json").is_file(),
             "skills": count_skills(),
-            "queued": JOB_QUEUE.qsize(),
-            "job_running": RUNNING_JOB is not None,
-            "job_paused": PAUSED_AT is not None,
+            "queued": len(PENDING),
+            "job_running": bool(turns_running()),
+            "job_paused": any(is_paused(job_id) for job_id in turns_running()),
+            "jobs_running": len(turns_running()),
+            "max_parallel": MAX_PARALLEL,
             "default_model": DEFAULT_MODEL,
             "default_effort": DEFAULT_EFFORT or "medium",
             # Normalised, so a stored `default` from an older config still matches
@@ -3309,7 +3410,8 @@ def main() -> None:
     CHAT_DIR.mkdir(parents=True, exist_ok=True)
     reconcile_interrupted_jobs()
     reconcile_interrupted_update()
-    threading.Thread(target=worker, daemon=True).start()
+    for _ in range(MAX_PARALLEL):
+        threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=auto_update_loop, daemon=True).start()
     threading.Thread(target=limit_watch, daemon=True).start()
 

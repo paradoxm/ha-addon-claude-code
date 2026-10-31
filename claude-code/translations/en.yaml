@@ -70,6 +70,14 @@ configuration:
     description: >-
       A run that exceeds this is killed, along with any subagents it started, and
       the job is marked failed. Long skills genuinely take tens of minutes.
+  max_parallel:
+    name: Turns at once
+    description: >-
+      How many turns may run at the same time. Turns of different conversations run
+      side by side — a voice assistant answering in one room while a long job works in
+      the console — and the turns of one conversation still run one after another.
+      Each is a CLI process of a few hundred megabytes; 1 brings back the old one-at-a-
+      time queue.
   auto_update:
     name: Update the CLI automatically
     description: >-

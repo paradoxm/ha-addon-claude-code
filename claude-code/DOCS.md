@@ -206,6 +206,7 @@ Uninstalling the add-on does remove the volume. If a skill exists only here, use
 | `permission_mode` | `manual` | What the agent may do unasked: `manual` asks, `plan` only plans, `acceptEdits` writes files, `auto` and `dontAsk` run tools freely. `bypassPermissions` is deliberately not offered. |
 | `api_token` | empty | Required before the API accepts traffic from the network. See below. |
 | `timeout_minutes` | `90` | A run past this is killed and the job marked failed. |
+| `max_parallel` | `5` | How many turns run at once. Different conversations run side by side; one conversation's turns still run in order. `1` is the old one-at-a-time queue. |
 | `auto_update` | `true` | Install a newer CLI by itself. See below. |
 | `update_channel` | `latest` | `latest` takes every release; `stable` runs about a week behind and skips releases with major regressions. |
 
@@ -309,7 +310,7 @@ with `411` rather than silently arriving empty.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/ping` | Liveness only, no token, no detail — for a watchdog |
-| `GET` | `/health` | Version, sign-in state, skill count, queue depth, update state |
+| `GET` | `/health` | Version, sign-in state, skill count, queue depth and turns running, update state |
 | `GET` | `/version` | Installed and available versions, and the resolved binary path |
 | `GET` | `/update` | Progress or result of the most recent update |
 | `POST` | `/update?target=` | Start an update. `target` is `latest`, `stable` or a version; defaults to `update_channel`. Returns `202` at once |
@@ -369,9 +370,14 @@ a bot's exchange one conversation. `title` is what to call that new conversation
 while the first turn is still running: a conversation opened by a skill is otherwise listed
 under the skill's own opening lines, the same ones for every conversation it opens. It is
 ignored by a turn that resumes a conversation, which has a name already, and by a job that
-is not a chat turn, whose session nothing lists. Renaming one later is `POST /chat/rename`. The chat routes are the same machinery with `chat: true` set, which is what
-makes a message from the console and a job from another add-on queue behind one another instead
-of running two CLI processes at once.
+is not a chat turn, whose session nothing lists. Renaming one later is `POST /chat/rename`. The chat routes are the same machinery with `chat: true` set.
+
+Turns of different conversations run at the same time, up to `max_parallel` of them; past
+that they wait in order. A conversation takes its turns one at a time whatever the setting:
+a turn that `resume`s a conversation waits while another turn of it runs, and the console's
+own turns are one conversation for this purpose. A one-off job and a caller's first message
+open something new, so they never wait behind anything but the limit. `GET /health` reports
+`jobs_running`, `max_parallel` and `queued`; the CLI is updated only when no turn runs.
 
 ### The plan's allowance
 

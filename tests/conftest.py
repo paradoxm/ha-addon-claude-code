@@ -45,6 +45,9 @@ DATA_DIR = Path(tempfile.mkdtemp(prefix="addon-tests-"))
             "permission_mode": "manual",
             "api_token": API_TOKEN,
             "timeout_minutes": JOB_TIMEOUT_MINUTES,
+            # One at a time unless a test says otherwise: most of what is tested here is
+            # about a turn and the line behind it, and a second slot would blur both.
+            "max_parallel": 1,
             "auto_update": False,
             "update_channel": "latest",
         }
@@ -150,11 +153,17 @@ def tar_skill(*, name=None, description="a stub skill", extra_files=None) -> byt
 
 @pytest.fixture(scope="session")
 def addon():
-    """The add-on's module, with its directories in place and its worker running."""
+    """The add-on's module, with its directories in place and its workers running.
+
+    Two of them, although `max_parallel` is one: a worker only takes a job while there is
+    a slot for it, so the second sits idle until a test raises MAX_PARALLEL — and then
+    there is somebody there to run the second turn.
+    """
     api.SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     api.JOBS_DIR.mkdir(parents=True, exist_ok=True)
     api.CHAT_DIR.mkdir(parents=True, exist_ok=True)
-    threading.Thread(target=api.worker, daemon=True).start()
+    for _ in range(2):
+        threading.Thread(target=api.worker, daemon=True).start()
     return api
 
 
@@ -175,7 +184,7 @@ def client(addon) -> Iterator[Client]:
 def settled_queue(addon, client):
     """Leave the add-on idle after every test.
 
-    One worker runs every turn, so a run left in flight would be the next test's
+    One turn runs at a time here, so a run left in flight would be the next test's
     first surprise. This waits for the queue to drain rather than sleeping.
     """
     yield

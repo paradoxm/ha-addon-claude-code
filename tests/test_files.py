@@ -112,7 +112,7 @@ def test_broken_markdown_is_a_contradiction_so_anything_saves(addon, client):
 def test_saving_the_cli_s_own_file_is_refused_while_claude_is_working(
     addon, client, monkeypatch
 ):
-    monkeypatch.setattr(addon, "RUNNING_JOB", "abc123def456")
+    monkeypatch.setitem(addon.RUNNING, "abc123def456", addon.Turn())
 
     answer = client.request("PUT", "/files/config", body=b"{}")
 
@@ -122,7 +122,7 @@ def test_saving_the_cli_s_own_file_is_refused_while_claude_is_working(
 
 
 def test_the_instructions_can_be_saved_while_claude_is_working(addon, client, monkeypatch):
-    monkeypatch.setattr(addon, "RUNNING_JOB", "abc123def456")
+    monkeypatch.setitem(addon.RUNNING, "abc123def456", addon.Turn())
 
     answer = client.request("PUT", "/files/memory", body=b"changed mid-run")
 

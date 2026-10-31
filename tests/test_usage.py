@@ -506,7 +506,7 @@ def test_a_running_turn_no_longer_keeps_the_renewal_away(
 ):
     """The CLI's own file lock is what keeps the two renewals apart now, so a reading taken
     while a turn runs renews a dead token instead of reporting it."""
-    monkeypatch.setattr(addon, "RUNNING_PROC", object())
+    monkeypatch.setitem(addon.RUNNING, "a-turn", addon.Turn())
     seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
                                                       "expires_in": 3600})
 
@@ -767,7 +767,8 @@ def test_the_sign_in_is_kept_warm_while_a_turn_is_running_too(
     """A long turn used to hold the renewal off for its whole length; the shared lock makes
     that unnecessary, and a turn that renews first simply leaves this nothing to do."""
     sign_in(addon, expiresAt=int((time.time() + 30 * 60) * 1000))
-    monkeypatch.setattr(addon, "RUNNING_PROC", object())
+    monkeypatch.setattr(addon, "GUARD_LIMITS", False)
+    monkeypatch.setitem(addon.RUNNING, "a-turn", addon.Turn())
     seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
                                                      "expires_in": 8 * 3600})
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.23.0
+
+- **Several turns at once.** Every turn used to wait for the one before it, whoever sent
+  it: a voice assistant asking a ten-second question sat behind a skill working for an hour
+  in the console. Turns of different conversations now run side by side, up to the new
+  `max_parallel` option (5 by default, 1 for the old queue), and wait in order past that. A
+  conversation still takes its turns one at a time — two turns resuming one transcript
+  would both write it — and the console's own turns count as one conversation. Freezing,
+  stopping and the limit guard act on each turn by itself, the guard judging all of them
+  on one reading; an update of the CLI waits until no turn is running. `GET /health` adds
+  `jobs_running` and `max_parallel`. This rests on 1.22.0: the sign-in is renewed under
+  the CLI's own lock, which the CLI's processes already share among themselves.
+
 ## 1.22.0
 
 - **The sign-in is renewed under the CLI's own lock.** The add-on used to stay away from
