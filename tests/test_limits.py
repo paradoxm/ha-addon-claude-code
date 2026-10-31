@@ -591,9 +591,8 @@ def test_a_moment_is_said_the_way_somebody_would_say_it(addon, value, shown):
 def test_a_turn_takes_the_credentials_lock_across_its_spawn(
     client, addon, monkeypatch, stub_behaviour
 ):
-    """So nothing renews the account's token while the CLI is starting up on it. The CLI
-    renews its own, and two renewals spend the same refresh token twice — which signs the
-    account out rather than renewing it."""
+    """So a renewal of ours that is under way finishes writing before the CLI reads the
+    file it is starting up on."""
     held = []
     spawn = addon.subprocess.Popen
 

@@ -1,6 +1,7 @@
 """How much of the plan's allowance is left, for a caller that would rather wait."""
 
 import json
+import os
 import time
 import urllib.error
 
@@ -500,21 +501,20 @@ def test_nothing_else_in_the_credentials_file_is_touched(
     assert addon.CREDENTIALS_PATH.stat().st_mode & 0o777 == 0o600, "and nobody else can read it"
 
 
-def test_nothing_is_renewed_while_the_cli_is_running(
+def test_a_running_turn_no_longer_keeps_the_renewal_away(
     addon, client, monkeypatch, signed_in_yesterday
 ):
-    """A running turn renews its own token, and two renewals spend the refresh token twice —
-    which signs the account out rather than renewing it."""
+    """The CLI's own file lock is what keeps the two renewals apart now, so a reading taken
+    while a turn runs renews a dead token instead of reporting it."""
     monkeypatch.setattr(addon, "RUNNING_PROC", object())
     seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
                                                       "expires_in": 3600})
 
     usage = client.get("/usage").json
 
-    assert seen["renewals"] == 0
-    assert usage["available"] is False
-    assert usage["reason"] == "HTTP 401"
-    assert stored_oauth(addon)["accessToken"] == "spent", "the file is the CLI's to write"
+    assert seen["renewals"] == 1
+    assert usage["available"] is True
+    assert stored_oauth(addon)["accessToken"] == "renewed"
 
 
 def test_a_token_with_no_expiry_recorded_is_used_as_it_is(
@@ -625,19 +625,83 @@ def test_a_renewal_that_does_not_say_how_long_is_not_repeated_on_every_reading(
     assert seen["renewals"] == 1
 
 
-def test_a_turn_that_got_there_first_stops_the_renewal_dead(
+def test_a_token_somebody_else_renewed_meanwhile_is_used_as_it_is(
     addon, monkeypatch, signed_in_yesterday
 ):
-    """The check inside the lock, which is what makes «never while the CLI runs» a fact
-    rather than a hope: a reading can decide to renew a moment before a turn starts, and
-    whoever takes the lock first wins."""
-    monkeypatch.setattr(addon, "RUNNING_PROC", object())
+    """The check the CLI makes under its lock: the token in the file is no longer the one
+    judged spent, so a turn renewed it while we waited — renewing again would only spend
+    the refresh token it just got."""
     seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
                                                       "expires_in": 3600})
+    sign_in(addon, accessToken="the turn's", expiresAt=int((time.time() + 8 * 3600) * 1000))
 
-    assert addon.renew_access_token() is None
+    assert addon.renew_access_token("spent") == "the turn's"
     assert seen["renewals"] == 0
-    assert stored_oauth(addon)["accessToken"] == "spent"
+    assert stored_oauth(addon)["accessToken"] == "the turn's"
+
+
+def test_a_renewal_takes_both_of_the_cli_s_locks_and_gives_them_back(
+    addon, monkeypatch, signed_in_yesterday
+):
+    held = []
+    two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600})
+    write = addon.write_credentials
+
+    def watch(stored):
+        held.append([path.is_dir() for path in addon.CLI_REFRESH_LOCKS])
+        write(stored)
+
+    monkeypatch.setattr(addon, "write_credentials", watch)
+
+    assert addon.renew_access_token("spent") == "renewed"
+    assert held == [[True, True]], "the file was written without the CLI's locks held"
+    assert not any(path.exists() for path in addon.CLI_REFRESH_LOCKS)
+
+
+def test_a_cli_renewing_right_now_is_left_to_it(addon, monkeypatch, signed_in_yesterday):
+    """A lock with a live holder is waited on the way the CLI waits, and then given up on:
+    whoever holds it is renewing, and the next reading will find what they wrote."""
+    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
+                                                      "expires_in": 3600})
+    naps = []
+    monkeypatch.setattr(addon.time, "sleep", naps.append)
+    addon.CLI_REFRESH_LOCKS[0].mkdir(parents=True)
+    try:
+        assert addon.renew_access_token("spent") is None
+        assert addon.CLI_REFRESH_LOCKS[0].is_dir(), "somebody else's lock is not ours to drop"
+    finally:
+        addon.CLI_REFRESH_LOCKS[0].rmdir()
+
+    assert seen["renewals"] == 0
+    assert len(naps) == addon.CLI_LOCK_TRIES - 1
+    assert not addon.CLI_REFRESH_LOCKS[1].exists(), "half a pair is let go of"
+
+
+def test_a_lock_left_by_a_dead_cli_is_cleared(addon, monkeypatch, signed_in_yesterday):
+    """Nobody tends it any more, so its mtime falls behind — exactly what the CLI checks."""
+    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
+                                                      "expires_in": 3600})
+    monkeypatch.setattr(addon.time, "sleep", lambda seconds: None)
+    dead = addon.CLI_REFRESH_LOCKS[1]
+    dead.mkdir(parents=True)
+    (dead / "holder").write_text("12345")
+    long_ago = time.time() - 10 * 60
+    os.utime(dead, (long_ago, long_ago))
+
+    assert addon.renew_access_token("spent") == "renewed"
+    assert seen["renewals"] == 1
+    assert not dead.exists()
+
+
+def test_a_lock_that_vanishes_while_looked_at_is_simply_tried_again(addon, monkeypatch):
+    path = addon.HOME / "gone.lock"
+
+    def raced(self, *args, **kwargs):
+        raise FileExistsError(self)
+
+    monkeypatch.setattr(addon.Path, "mkdir", raced)
+
+    assert addon.take_cli_lock(path) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -697,7 +761,11 @@ def test_the_sign_in_is_kept_warm_even_with_the_guard_switched_off(
     assert seen["renewals"] == 1
 
 
-def test_nothing_is_kept_warm_while_a_turn_is_running(addon, monkeypatch, signed_in_yesterday):
+def test_the_sign_in_is_kept_warm_while_a_turn_is_running_too(
+    addon, monkeypatch, signed_in_yesterday
+):
+    """A long turn used to hold the renewal off for its whole length; the shared lock makes
+    that unnecessary, and a turn that renews first simply leaves this nothing to do."""
     sign_in(addon, expiresAt=int((time.time() + 30 * 60) * 1000))
     monkeypatch.setattr(addon, "RUNNING_PROC", object())
     seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
@@ -705,7 +773,7 @@ def test_nothing_is_kept_warm_while_a_turn_is_running(addon, monkeypatch, signed
 
     addon.limit_watch_once()
 
-    assert seen["renewals"] == 0, "the CLI renews its own while it runs"
+    assert seen["renewals"] == 1
 
 
 def test_a_renewal_that_failed_is_not_tried_again_on_the_next_tick(
