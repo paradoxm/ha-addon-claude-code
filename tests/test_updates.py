@@ -58,9 +58,7 @@ def test_a_freshly_booted_machine_still_probes_on_the_first_call(addon):
     assert addon.installed_version() == "9.9.9"
 
 
-def test_a_version_the_binary_cannot_report_is_not_cached_over_a_good_one(
-    addon, stub_behaviour
-):
+def test_a_version_the_binary_cannot_report_is_not_cached_over_a_good_one(addon, stub_behaviour):
     assert addon.installed_version(force=True) == "9.9.9"
     stub_behaviour("STUB_VERSION", "")
 

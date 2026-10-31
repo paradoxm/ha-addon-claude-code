@@ -52,9 +52,7 @@ def test_a_second_message_continues_the_same_conversation(fresh_conversation):
     assert len(conversation["turns"]) == 4
 
 
-def test_the_reply_can_be_read_while_it_is_still_being_written(
-    fresh_conversation, stub_behaviour
-):
+def test_the_reply_can_be_read_while_it_is_still_being_written(fresh_conversation, stub_behaviour):
     client = fresh_conversation
     stub_behaviour("STUB_SLEEP", "12")
 
@@ -83,9 +81,7 @@ def test_the_reply_being_written_is_not_also_served_as_a_finished_turn(
 
     turn = send_message(client, "a slow one")
     wait_until(
-        lambda: any(
-            job.get("partial") for job in client.get("/chat").json.get("pending") or []
-        ),
+        lambda: any(job.get("partial") for job in client.get("/chat").json.get("pending") or []),
         description="the reply to start arriving",
     )
 
@@ -103,9 +99,7 @@ def test_cancelling_a_running_turn_settles_it_as_stopped_and_keeps_what_was_said
     stub_behaviour("STUB_SLEEP", "12")
     turn = send_message(client, "a slow one")
     wait_until(
-        lambda: any(
-            job.get("partial") for job in client.get("/chat").json.get("pending") or []
-        ),
+        lambda: any(job.get("partial") for job in client.get("/chat").json.get("pending") or []),
         description="the reply to start arriving",
     )
 
@@ -146,9 +140,7 @@ def test_a_message_sent_while_claude_is_answering_waits_its_turn(
     client.send_json("POST", f"/jobs/{occupying['id']}/cancel")
 
 
-def test_a_queued_message_can_be_dropped_before_it_ever_starts(
-    fresh_conversation, stub_behaviour
-):
+def test_a_queued_message_can_be_dropped_before_it_ever_starts(fresh_conversation, stub_behaviour):
     client = fresh_conversation
     stub_behaviour("STUB_SLEEP", "12")
     occupying = send_message(client, "occupies the CLI")
@@ -164,9 +156,7 @@ def test_a_queued_message_can_be_dropped_before_it_ever_starts(
     client.send_json("POST", f"/jobs/{occupying['id']}/cancel")
 
 
-def test_a_failing_turn_stays_visible_with_the_reason_it_failed(
-    fresh_conversation, stub_behaviour
-):
+def test_a_failing_turn_stays_visible_with_the_reason_it_failed(fresh_conversation, stub_behaviour):
     client = fresh_conversation
     stub_behaviour("STUB_FAIL", "1")
 
@@ -450,9 +440,7 @@ def test_only_the_most_recent_warnings_are_kept(addon, transcripts_dir, client):
     assert notices[-1]["text"] == f"warning number {addon.NOTICES_KEPT + 4}"
 
 
-def test_resuming_a_conversation_brings_its_warnings_with_it(
-    fresh_conversation, stub_behaviour
-):
+def test_resuming_a_conversation_brings_its_warnings_with_it(fresh_conversation, stub_behaviour):
     client = fresh_conversation
     stub_behaviour("STUB_NOTICE", "1")
     turn = send_message(client, "warns once")
@@ -495,7 +483,8 @@ def test_another_caller_starts_its_own_conversation_rather_than_joining_this_one
     console_session = client.get("/chat").json["session"]
 
     theirs = client.send_json(
-        "POST", "/jobs",
+        "POST",
+        "/jobs",
         {"prompt": "a bot's first message", "chat": True, "source": "kitchen-tablet"},
     )
     client.send_json("POST", f"/jobs/{theirs.json['id']}/start")
@@ -643,8 +632,15 @@ def test_a_conversation_can_be_deleted(addon, client, transcripts_dir):
     session = "abcdef12-0000-4000-8000-00000000dead"
     transcript = transcripts_dir / f"{session}.jsonl"
     transcript.write_text(
-        json.dumps({"type": "user", "message": {"role": "user", "content": "hello"},
-                    "timestamp": "2026-01-01T00:00:00.000Z", "sessionId": session}) + "\n"
+        json.dumps(
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "hello"},
+                "timestamp": "2026-01-01T00:00:00.000Z",
+                "sessionId": session,
+            }
+        )
+        + "\n"
     )
     assert any(s["id"] == session for s in client.get("/chat/sessions").json["sessions"])
 
@@ -655,13 +651,18 @@ def test_a_conversation_can_be_deleted(addon, client, transcripts_dir):
     assert not any(s["id"] == session for s in client.get("/chat/sessions").json["sessions"])
 
 
-def test_deleting_the_one_being_looked_at_leaves_a_new_conversation(
-    addon, client, transcripts_dir
-):
+def test_deleting_the_one_being_looked_at_leaves_a_new_conversation(addon, client, transcripts_dir):
     session = "abcdef12-0000-4000-8000-0000000beef1"
     (transcripts_dir / f"{session}.jsonl").write_text(
-        json.dumps({"type": "user", "message": {"role": "user", "content": "hi"},
-                    "timestamp": "2026-01-01T00:00:00.000Z", "sessionId": session}) + "\n"
+        json.dumps(
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "hi"},
+                "timestamp": "2026-01-01T00:00:00.000Z",
+                "sessionId": session,
+            }
+        )
+        + "\n"
     )
     addon.set_current_session(session)
 
@@ -735,8 +736,9 @@ def test_the_transcript_is_cut_back_to_the_last_thing_the_user_said(
 
     mid_run = client.get("/chat").json
 
-    assert [line["role"] for line in mid_run["turns"]] == ["user", "assistant", "user"], \
+    assert [line["role"] for line in mid_run["turns"]] == ["user", "assistant", "user"], (
         "the reply being written belongs in `partial`, not in the transcript"
+    )
     assert any(job.get("partial") for job in mid_run["pending"]), "and it is there"
 
     client.send_json("POST", f"/jobs/{turn['id']}/cancel")

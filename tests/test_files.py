@@ -109,9 +109,7 @@ def test_broken_markdown_is_a_contradiction_so_anything_saves(addon, client):
     assert answer.status == 200
 
 
-def test_saving_the_cli_s_own_file_is_refused_while_claude_is_working(
-    addon, client, monkeypatch
-):
+def test_saving_the_cli_s_own_file_is_refused_while_claude_is_working(addon, client, monkeypatch):
     monkeypatch.setitem(addon.RUNNING, "abc123def456", addon.Turn())
 
     answer = client.request("PUT", "/files/config", body=b"{}")

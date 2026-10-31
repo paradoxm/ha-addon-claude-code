@@ -132,8 +132,11 @@ def test_a_note_that_was_damaged_on_disk_is_reported_rather_than_guessed(addon, 
 
 
 def test_a_patch_changes_one_part_and_leaves_the_rest_alone(client):
-    client.send_json("PUT", "/state/bot", {
-        "chats": {"100000000": {"stage": "files"}, "100000001": {"delivered": "22-08.zip"}}})
+    client.send_json(
+        "PUT",
+        "/state/bot",
+        {"chats": {"100000000": {"stage": "files"}, "100000001": {"delivered": "22-08.zip"}}},
+    )
 
     answer = client.send_json("PATCH", "/state/bot", {"chats": {"100000000": {"stage": "open"}}})
 
@@ -184,7 +187,8 @@ def test_a_patch_can_put_an_object_where_a_plain_value_was(client):
     client.send_json("PATCH", "/state/bot", {"watch": {"job_id": "6110a32aa945", "tries": 0}})
 
     assert client.get("/state/bot").json["value"] == {
-        "watch": {"job_id": "6110a32aa945", "tries": 0}}
+        "watch": {"job_id": "6110a32aa945", "tries": 0}
+    }
 
 
 def test_a_patch_on_a_note_nobody_wrote_writes_it(client):
@@ -208,8 +212,9 @@ def test_two_patches_at_once_both_survive(addon, client):
 
     def patch(which):
         ready.wait()
-        answer = client.send_json("PATCH", "/state/bot",
-                                  {"chats": {f"10000000{which}": {"stage": "date"}}})
+        answer = client.send_json(
+            "PATCH", "/state/bot", {"chats": {f"10000000{which}": {"stage": "date"}}}
+        )
         done.append(answer.status)
 
     workers = [threading.Thread(target=patch, args=(n,)) for n in range(8)]
@@ -220,8 +225,9 @@ def test_two_patches_at_once_both_survive(addon, client):
         worker.join(timeout=30)
 
     assert done == [200] * 8
-    assert sorted(client.get("/state/bot").json["value"]["chats"]) == \
-        [f"10000000{n}" for n in range(8)], "every one of the eight is there"
+    assert sorted(client.get("/state/bot").json["value"]["chats"]) == [
+        f"10000000{n}" for n in range(8)
+    ], "every one of the eight is there"
 
 
 def test_a_patch_that_would_make_the_note_too_large_is_refused(addon, client):

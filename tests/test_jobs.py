@@ -148,9 +148,7 @@ def test_a_finished_job_can_be_deleted_with_its_files(addon, client):
     assert client.get(f"/jobs/{job['id']}").status == 404
 
 
-def test_a_running_job_cannot_be_deleted_out_from_under_the_process(
-    client, stub_behaviour
-):
+def test_a_running_job_cannot_be_deleted_out_from_under_the_process(client, stub_behaviour):
     stub_behaviour("STUB_SLEEP", "12")
     job = create_job(client, start=True)
     wait_for_status(client, job["id"], "running")
@@ -309,6 +307,41 @@ def test_a_lean_turn_is_spawned_with_nothing_but_the_conversation(addon, client,
     assert "--mcp-config" not in spawned, "strict with nothing named is no servers at all"
 
 
+def test_a_lean_turn_keeps_the_tools_it_names_and_may_use_them_without_asking(
+    addon, client, monkeypatch
+):
+    """A voice turn that searches the web: without the allowance, dontAsk refuses it, and
+    with nothing else allowed it cannot run a command even if it had one."""
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(
+        client,
+        "news",
+        lean=True,
+        tools=["WebSearch", "Read"],
+        permission_mode="dontAsk",
+        start=True,
+    )
+    assert job["tools"] == ["WebSearch", "Read"]
+    wait_for_status(client, job["id"], "done")
+
+    spawned = argv[0]
+    assert spawned[spawned.index("--tools") + 1] == "WebSearch,Read"
+    assert spawned[spawned.index("--allowedTools") + 1] == "WebSearch,Read", "and no Bash"
+    assert "--strict-mcp-config" in spawned
+
+
+def test_tools_alone_narrow_an_ordinary_turn(addon, client, monkeypatch):
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(client, "read only", tools=[], start=True)
+    wait_for_status(client, job["id"], "done")
+
+    assert argv[0][argv[0].index("--tools") + 1] == ""
+    assert "--allowedTools" not in argv[0]
+    assert "--strict-mcp-config" not in argv[0]
+
+
 def test_an_ordinary_turn_keeps_everything_it_had(addon, client, monkeypatch):
     argv = spawned_argv(addon, monkeypatch)
 
@@ -317,6 +350,8 @@ def test_an_ordinary_turn_keeps_everything_it_had(addon, client, monkeypatch):
 
     assert job["lean"] is False
     assert job["system_prompt"] is None
+    assert job["tools"] is None
+    assert argv[0][argv[0].index("--allowedTools") + 1] == "Bash,Read,Write,Edit,Glob,Grep"
     for flag in ("--tools", "--disable-slash-commands", "--strict-mcp-config"):
         assert flag not in argv[0]
     assert not any(arg.startswith("--system-prompt") for arg in argv[0])
@@ -340,6 +375,11 @@ def test_a_system_prompt_is_passed_as_one_argument_whatever_it_begins_with(
         ({"system_prompt": "   "}, 400, "system_prompt must be a non-empty string"),
         ({"system_prompt": 42}, 400, "system_prompt must be a non-empty string"),
         ({"system_prompt": "x" * 20_001}, 413, "system_prompt is over"),
+        ({"tools": "WebSearch"}, 400, "tools must be a list of tool names"),
+        ({"tools": ["Web Search"]}, 400, "tools must be a list of tool names"),
+        ({"tools": ["Bash(rm:*)"]}, 400, "tools must be a list of tool names"),
+        ({"tools": [7]}, 400, "tools must be a list of tool names"),
+        ({"tools": ["Read"] * 51}, 400, "tools must be a list of tool names"),
     ],
 )
 def test_lean_and_system_prompt_are_checked(client, fields, status, message):
@@ -569,21 +609,59 @@ def test_a_half_written_stream_still_reports_what_it_can(addon, tmp_path):
     # Only lines mentioning a tool call are looked at, so the broken ones here say
     # "tool_use" too — otherwise they would be skipped before anything could go wrong.
     (tmp_path / "stream.jsonl").write_text(
-        "\n".join([
-            '{ "type": "assistant", "tool_use" truncated',
-            json.dumps({"type": "user", "message": {"role": "user", "content": [
-                {"type": "tool_use", "name": "NotClaude"}]}}),
-            json.dumps({"type": "assistant", "tool_use": True,
-                        "message": {"role": "assistant", "content": "prose, not blocks"}}),
-            json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
-                {"type": "text", "text": "a line that says tool_use and means nothing"},
-                {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
-            ]}}),
-            json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
-                {"type": "text", "text": "thinking out loud"},
-                {"type": "tool_use", "name": "Read", "input": {"file_path": "/x/form.docx"}},
-            ]}}),
-        ]) + "\n"
+        "\n".join(
+            [
+                '{ "type": "assistant", "tool_use" truncated',
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": [{"type": "tool_use", "name": "NotClaude"}],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "tool_use": True,
+                        "message": {"role": "assistant", "content": "prose, not blocks"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "a line that says tool_use and means nothing",
+                                },
+                                {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {"type": "text", "text": "thinking out loud"},
+                                {
+                                    "type": "tool_use",
+                                    "name": "Read",
+                                    "input": {"file_path": "/x/form.docx"},
+                                },
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n"
     )
 
     # In the order they were made, which is what a reader wants to see.

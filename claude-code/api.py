@@ -312,6 +312,12 @@ SETTINGS_PATH = HOME / ".claude" / "settings.json"
 # reapplied on every save so a hand-edited file cannot break search.
 REQUIRED_ENV = {"USE_BUILTIN_RIPGREP": "0"}
 SESSION_ID = re.compile(r"[0-9a-fA-F-]{8,64}")
+# A built-in tool's name, as `--tools` and `--allowedTools` take it: WebSearch, Read.
+TOOL_NAME = re.compile(r"[A-Za-z]{1,64}")
+# The built-in tools every turn may use without asking. Skills run their own scripts, so
+# Bash has to be among them — a convenience for the agent, not a security boundary; see
+# the module docstring.
+ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 SLASH_COMMAND = re.compile(r"/(compact|rename|clear|model|effort)\b")
 
 # Claude Code records far more than the conversation. A slash command, its output,
@@ -633,9 +639,7 @@ def block_errors(content) -> list:
             continue
         body = block.get("content")
         if isinstance(body, list):
-            body = "\n".join(
-                part.get("text", "") for part in body if isinstance(part, dict)
-            )
+            body = "\n".join(part.get("text", "") for part in body if isinstance(part, dict))
         text = TOOL_ERROR.sub("", str(body or "")).strip()
         if text:
             errors.append(text)
@@ -795,9 +799,7 @@ def scan_session(path: Path) -> dict | None:
         "custom": bool(title),
         "preview": (first_prompt or "")[:300],
         "messages": messages,
-        "updated_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(
-            timespec="seconds"
-        ),
+        "updated_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds"),
     }
 
 
@@ -1058,8 +1060,10 @@ def lane_of(job: dict) -> str:
     so they are all one lane. A turn that names a conversation is in that one's. Anything
     else — a one-off job, a caller's first message — opens something new and is its own.
     """
-    if job.get("chat") and job.get("source", "console") == "console" and not job.get(
-        "resumed_from"
+    if (
+        job.get("chat")
+        and job.get("source", "console") == "console"
+        and not job.get("resumed_from")
     ):
         return "console"
     return str(job.get("resumed_from") or job["id"])
@@ -1083,6 +1087,7 @@ def is_paused(job_id: str) -> bool:
 # --------------------------------------------------------------------------- #
 # jobs
 # --------------------------------------------------------------------------- #
+
 
 def job_dir(job_id: str) -> Path:
     return JOBS_DIR / safe_name(job_id)
@@ -1237,6 +1242,16 @@ def create_job(payload: dict) -> dict:
         raise ApiError(400, "system_prompt must be a non-empty string")
     if system_prompt is not None and len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
         raise ApiError(413, f"system_prompt is over {MAX_SYSTEM_PROMPT_CHARS} characters")
+    # The built-in tools the turn has, in place of all of them: a lean voice turn that may
+    # still search the web. Named here, a tool is also allowed without asking, so it works
+    # under dontAsk as well.
+    tools = payload.get("tools")
+    if tools is not None and (
+        not isinstance(tools, list)
+        or len(tools) > 50
+        or not all(isinstance(tool, str) and TOOL_NAME.fullmatch(tool) for tool in tools)
+    ):
+        raise ApiError(400, "tools must be a list of tool names")
 
     prune_jobs()
 
@@ -1262,6 +1277,7 @@ def create_job(payload: dict) -> dict:
         "resumed_from": resume,
         "lean": lean,
         "system_prompt": system_prompt,
+        "tools": tools,
         "session_id": None,
         "context": None,
         "created_at": now(),
@@ -1345,9 +1361,10 @@ def run_claude(
     direct child, which left subagents running for the rest of the container's life.
     """
     turn = turn or Turn()
-    with open(bookkeeping / "claude.log", "wb") as stderr, open(
-        bookkeeping / "stream.jsonl", "wb"
-    ) as stream:
+    with (
+        open(bookkeeping / "claude.log", "wb") as stderr,
+        open(bookkeeping / "stream.jsonl", "wb") as stream,
+    ):
         # The credentials lock, held only across the spawn, so a renewal of ours that is
         # under way finishes writing before the CLI reads the file. Once it runs, the CLI
         # and this add-on keep out of each other's renewals through the CLI's file lock.
@@ -1575,16 +1592,14 @@ def run_job(job_id: str) -> None:
     with contextlib.suppress(OSError):
         keep_synced_plugins_off()
 
+    # A turn that names its tools is allowed those and nothing else.
+    allowed = ALLOWED_TOOLS if job.get("tools") is None else job["tools"]
     argv = [
         "claude",
         "-p",
         "--permission-mode",
         job.get("permission_mode") or DEFAULT_PERMISSION_MODE,
-        # Skills run their own scripts, so Bash has to be allowed. This is a
-        # convenience for the agent, not a security boundary — see the module
-        # docstring.
-        "--allowedTools",
-        "Bash,Read,Write,Edit,Glob,Grep",
+        *(["--allowedTools", ",".join(allowed)] if allowed else []),
         # Streaming so the reply can be shown as it is produced. --verbose is
         # required alongside --include-partial-messages, and the final `result`
         # record carries everything the single-shot json format did.
@@ -1599,10 +1614,12 @@ def run_job(job_id: str) -> None:
         argv += ["--model", job["model"]]
     if job.get("effort"):
         argv += ["--effort", job["effort"]]
+    if job.get("lean") or job.get("tools") is not None:
+        argv += ["--tools", ",".join(job.get("tools") or [])]
     if job.get("lean"):
-        # No built-in tools, no skills or slash commands, and no MCP server but the ones
-        # named on the command line — of which there are none.
-        argv += ["--tools", "", "--disable-slash-commands", "--strict-mcp-config"]
+        # No built-in tools but the ones named, no skills or slash commands, and no MCP
+        # server but the ones named on the command line — of which there are none.
+        argv += ["--disable-slash-commands", "--strict-mcp-config"]
     if job.get("system_prompt"):
         # One argument with `=`, so a prompt that begins with `--` is not read as a flag.
         argv.append(f"--system-prompt={job['system_prompt']}")
@@ -1614,9 +1631,7 @@ def run_job(job_id: str) -> None:
     # be showing. Without that, a bot's first message landed in the middle of
     # somebody's chat.
     own = job.get("source", "console") == "console"
-    resume = job.get("resumed_from") or (
-        current_session() if job.get("chat") and own else None
-    )
+    resume = job.get("resumed_from") or (current_session() if job.get("chat") and own else None)
     if resume:
         job["resumed_from"] = resume
         # Without --fork-session this keeps the same session id, so a conversation
@@ -1649,9 +1664,7 @@ def run_job(job_id: str) -> None:
             named = set_session_title(session, job["title"])
 
     try:
-        returncode = run_claude(
-            workdir, bookkeeping, argv, job["prompt"], publish, turn_of(job_id)
-        )
+        returncode = run_claude(workdir, bookkeeping, argv, job["prompt"], publish, turn_of(job_id))
         job["exit_code"] = returncode
 
         # The CLI reports failures in its output rather than on stderr: a run with
@@ -1663,8 +1676,8 @@ def run_job(job_id: str) -> None:
             message = stream_text(bookkeeping) or None
 
         cancelled = job_id in CANCELLED
-        failed = cancelled or returncode != 0 or (
-            isinstance(payload, dict) and payload.get("is_error")
+        failed = (
+            cancelled or returncode != 0 or (isinstance(payload, dict) and payload.get("is_error"))
         )
 
         if cancelled:
@@ -1701,8 +1714,11 @@ def run_job(job_id: str) -> None:
                 # holding its own conversation through the API does not decide what
                 # this window is looking at.
                 own = job.get("source", "console") == "console"
-                if job.get("chat") and not failed and own and (
-                    current_session() == job.get("resumed_from")
+                if (
+                    job.get("chat")
+                    and not failed
+                    and own
+                    and (current_session() == job.get("resumed_from"))
                 ):
                     set_current_session(session)
             job["context"] = context_of(payload, bookkeeping)
@@ -1791,7 +1807,11 @@ def process_of_the_running_turn(job_id: str) -> "subprocess.Popen | None":
 
 
 def freeze_job(
-    job_id: str, freeze: bool, *, by_guard: bool = False, reason: str | None = None,
+    job_id: str,
+    freeze: bool,
+    *,
+    by_guard: bool = False,
+    reason: str | None = None,
     until: str | None = None,
 ) -> dict:
     """Stop the turn where it stands, or let it carry on.
@@ -1982,8 +2002,7 @@ def keep_the_sign_in_warm() -> None:
         print("[api] the sign-in was renewed before it ran out", flush=True)
     else:
         TOKEN_KEEP["until"] = ticks + KEEP_BACKOFF_SEC
-        print("[api] the sign-in could not be renewed; signing in again may be needed",
-              flush=True)
+        print("[api] the sign-in could not be renewed; signing in again may be needed", flush=True)
 
 
 def limit_watch_once() -> float:
@@ -2690,6 +2709,7 @@ def auto_update_loop() -> None:
 # MCP servers
 # --------------------------------------------------------------------------- #
 
+
 def mcp_transport(definition: dict) -> str:
     """stdio, http or sse — how the CLI will talk to this server."""
     declared = str(definition.get("type") or "").lower()
@@ -2849,7 +2869,7 @@ def frontmatter_field(skill_md: Path, field: str) -> str | None:
         value = line.split(":", 1)[1].strip()
         if value in {">-", ">", "|", "|-", ""}:
             collected = []
-            for following in lines[index + 1:]:
+            for following in lines[index + 1 :]:
                 if following.strip() and not following.startswith((" ", "\t")):
                     break
                 collected.append(following.strip())
@@ -2871,9 +2891,7 @@ def skill_meta(path: Path) -> dict:
             continue
 
     try:
-        updated_at = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(
-            timespec="seconds"
-        )
+        updated_at = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(timespec="seconds")
     except OSError:
         updated_at = None
 
@@ -3007,6 +3025,7 @@ def delete_skill(name: str) -> None:
 # HTTP
 # --------------------------------------------------------------------------- #
 
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "claude-code-addon"
     protocol_version = "HTTP/1.1"
@@ -3039,7 +3058,7 @@ class Handler(BaseHTTPRequestHandler):
             encoded = quote(filename, safe="")
             self.send_header(
                 "Content-Disposition",
-                f'attachment; filename="{header_safe(filename)}"; filename*=UTF-8\'\'{encoded}',
+                f"attachment; filename=\"{header_safe(filename)}\"; filename*=UTF-8''{encoded}",
             )
         self.end_headers()
         self.wfile.write(body)
@@ -3132,14 +3151,11 @@ class Handler(BaseHTTPRequestHandler):
                     for j in list_jobs()
                     if j.get("chat")
                     and (
-                        j.get("source", "console") == "console"
-                        or j.get("resumed_from") == session
+                        j.get("source", "console") == "console" or j.get("resumed_from") == session
                     )
                 ]
                 latest = next((j for j in jobs if j.get("context")), None)
-                waiting = [
-                    j for j in jobs if j.get("status") in {"created", "queued", "running"}
-                ]
+                waiting = [j for j in jobs if j.get("status") in {"created", "queued", "running"}]
                 waiting.reverse()  # oldest first: that is the order they will run in
                 running = None
                 for job in waiting:

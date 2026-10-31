@@ -43,8 +43,12 @@ def usage_says(addon, monkeypatch, percent, kind="session", available=True, back
     if available:
         back = addon.datetime.now(addon.UTC) + addon.timedelta(hours=back_in_hours)
         limit = addon.WEEK_THRESHOLD if kind == "week" else addon.SESSION_THRESHOLD
-        worst = {"kind": kind, "percent": percent, "threshold": limit,
-                 "resets_at": back.isoformat()}
+        worst = {
+            "kind": kind,
+            "percent": percent,
+            "threshold": limit,
+            "resets_at": back.isoformat(),
+        }
         reading = {
             "available": True,
             "worst": worst,
@@ -109,9 +113,7 @@ def test_with_the_guard_off_the_add_on_only_reports(addon, client, monkeypatch):
     ("percent", "expected_minutes"),
     [(10.0, 15), (65.0, 15), (75.0, 5), (88.0, 2), (89.9, 2), (95.0, 2)],
 )
-def test_the_closer_to_the_wall_the_closer_it_looks(
-    addon, monkeypatch, percent, expected_minutes
-):
+def test_the_closer_to_the_wall_the_closer_it_looks(addon, monkeypatch, percent, expected_minutes):
     """A reading costs a request to Anthropic; asking every minute for half an hour is
     both wasteful and rude. Far from the threshold the answer cannot change fast enough
     to matter."""
@@ -311,10 +313,22 @@ def test_a_window_that_will_not_be_back_for_days_is_not_worth_freezing_for(
     """A weekly window resetting in six days would hold the frozen process — and every
     job behind it — for six days. Better to run into the wall: the conversation survives
     and can be carried on."""
-    week = {"kind": "week", "percent": 96.0, "threshold": 90,
-            "resets_at": (addon.datetime.now(addon.UTC) + addon.timedelta(days=6)).isoformat()}
-    monkeypatch.setattr(addon, "read_usage", lambda force=False: {
-        "available": True, "worst": week, "enough": False, "checked_at": "now"})
+    week = {
+        "kind": "week",
+        "percent": 96.0,
+        "threshold": 90,
+        "resets_at": (addon.datetime.now(addon.UTC) + addon.timedelta(days=6)).isoformat(),
+    }
+    monkeypatch.setattr(
+        addon,
+        "read_usage",
+        lambda force=False: {
+            "available": True,
+            "worst": week,
+            "enough": False,
+            "checked_at": "now",
+        },
+    )
 
     assert addon.hold_for_limits(running) is None
     assert client.get(f"/jobs/{running}").json["paused"] is False
@@ -325,8 +339,10 @@ def test_a_frozen_turn_is_let_go_when_its_window_was_due_back(addon, client, mon
     good the first time the reading went quiet."""
     usage_says(addon, monkeypatch, 96.0)
     addon.hold_for_limits(running)
-    addon.update_job(running, resumes_at=(
-        addon.datetime.now(addon.UTC) - addon.timedelta(minutes=10)).isoformat())
+    addon.update_job(
+        running,
+        resumes_at=(addon.datetime.now(addon.UTC) - addon.timedelta(minutes=10)).isoformat(),
+    )
     usage_says(addon, monkeypatch, 0, available=False)
 
     addon.hold_for_limits(running)
@@ -350,9 +366,11 @@ def test_a_frozen_turn_whose_window_is_not_due_yet_stays_frozen(
 def test_what_the_guard_wrote_survives_the_turn_writing_its_own_record(addon, running):
     """Two threads, one record: each writes its own fields under the lock rather than
     reading the whole thing and putting all of it back."""
-    addon.update_job(running, paused_reason="limits",
-                     resumes_at=(addon.datetime.now(addon.UTC)
-                                 + addon.timedelta(hours=4)).isoformat())
+    addon.update_job(
+        running,
+        paused_reason="limits",
+        resumes_at=(addon.datetime.now(addon.UTC) + addon.timedelta(hours=4)).isoformat(),
+    )
 
     addon.update_job(running, partial_marker="from the other writer")
 
@@ -377,6 +395,7 @@ def test_an_answer_the_endpoint_never_used_to_give_does_not_stop_the_work(
 ):
     """It only ever broke GET /usage before; with the guard in the way it would have
     stopped every job from starting."""
+
     class Nonsense:
         def read(self):
             # A shape usage_window does not defend against: the percentage as words.
@@ -410,7 +429,7 @@ def test_an_answer_the_endpoint_never_used_to_give_does_not_stop_the_work(
     [
         ("2026-08-13T13:20:00+00:00", True),
         ("2026-08-13T13:20:00Z", True),
-        ("2026-08-13T13:20:00", True),   # no zone: read as UTC, which is what it means
+        ("2026-08-13T13:20:00", True),  # no zone: read as UTC, which is what it means
         ("not a time", False),
         (None, False),
         (1786646400, False),
@@ -427,6 +446,7 @@ def test_a_frozen_turn_with_no_reset_time_is_not_let_go_on_a_guess(addon):
 # --------------------------------------------------------------------------- #
 # that the guard is wired up at all, and that a freeze really stops a process
 # --------------------------------------------------------------------------- #
+
 
 def test_the_watcher_actually_looks_at_the_turn_that_is_running(addon, monkeypatch, running):
     """Without this, deleting the guard's one call from the loop changed nothing that any
@@ -514,20 +534,23 @@ def test_the_subagents_freeze_with_the_turn(addon, client, stub_behaviour):
     """Why the signal goes to the whole process group: a skill's real work happens in
     subagents and Bash calls, and a freeze that misses them stops nothing that costs."""
     stub_behaviour("STUB_CHILD", "1")
-    stub_behaviour("STUB_SLEEP", "30")   # or the turn is over before it can be frozen
+    stub_behaviour("STUB_SLEEP", "30")  # or the turn is over before it can be frozen
     job = create_job(client, "with a child of its own", start=True)
     wait_for_status(client, job["id"], "running")
     ticks = addon.JOBS_DIR / job["id"] / "child-ticks"
-    wait_until(lambda: ticks.is_file() and ticks.stat().st_size > 0,
-               description="the child to start working")
+    wait_until(
+        lambda: ticks.is_file() and ticks.stat().st_size > 0,
+        description="the child to start working",
+    )
 
     assert client.send_json("POST", f"/jobs/{job['id']}/pause").json["paused"] is True
     frozen_at = ticks.stat().st_size
     time.sleep(1.5)
     while_frozen = ticks.stat().st_size
     client.send_json("POST", f"/jobs/{job['id']}/resume")
-    wait_until(lambda: ticks.stat().st_size > while_frozen,
-               description="the child to carry on once let go")
+    wait_until(
+        lambda: ticks.stat().st_size > while_frozen, description="the child to carry on once let go"
+    )
 
     assert while_frozen == frozen_at, "the child kept working through the freeze"
     client.send_json("POST", f"/jobs/{job['id']}/cancel")
@@ -616,15 +639,23 @@ def test_the_guard_freezes_on_the_week_though_the_session_has_room(
     a week at 80 of 75 stops work while the session sits at half of ninety."""
     monkeypatch.setattr(addon, "GUARD_LIMITS", True)
     back = addon.datetime.now(addon.UTC) + addon.timedelta(hours=4)
-    monkeypatch.setattr(addon, "read_usage", lambda force=False: {
-        "available": True,
-        "session": {"percent": 45.0, "threshold": 90, "resets_at": back.isoformat()},
-        "week": {"percent": 80.0, "threshold": 75, "resets_at": back.isoformat()},
-        "worst": {"kind": "week", "percent": 80.0, "threshold": 75,
-                  "resets_at": back.isoformat()},
-        "enough": False,
-        "checked_at": "now",
-    })
+    monkeypatch.setattr(
+        addon,
+        "read_usage",
+        lambda force=False: {
+            "available": True,
+            "session": {"percent": 45.0, "threshold": 90, "resets_at": back.isoformat()},
+            "week": {"percent": 80.0, "threshold": 75, "resets_at": back.isoformat()},
+            "worst": {
+                "kind": "week",
+                "percent": 80.0,
+                "threshold": 75,
+                "resets_at": back.isoformat(),
+            },
+            "enough": False,
+            "checked_at": "now",
+        },
+    )
 
     frozen = addon.hold_for_limits(running)
 
