@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.27.0
+
+- **A new install starts with a house's settings.** The first `settings.json` held only
+  the ripgrep switch, so each of these had to be set by hand: the terminal acts without
+  asking (`permissions.defaultMode: auto`), no artifacts (`enableArtifact: false`), dynamic
+  workflows of fewer than five agents (`workflowSizeGuideline: small`), and a conversation
+  compacted at 500,000 tokens rather than near the end of the 1M window
+  (`autoCompactWindow`). Written on first start only: an existing install keeps its file.
+
 ## 1.26.0
 
 - **A turn can keep the tools it needs.** A lean turn had no tools at all, so a voice
