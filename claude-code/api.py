@@ -253,6 +253,9 @@ DEFAULT_EFFORT = str(OPTIONS.get("effort") or "")
 # processes, and so does this add-on since it renews under the CLI's lock; what is left to
 # ration is the box's memory, at a few hundred megabytes a turn.
 MAX_PARALLEL = int(OPTIONS.get("max_parallel") or 5)
+# Plugins claude.ai hands an account — an organisation's, typically — come switched on, and
+# each carries skills into every turn. Off unless asked for: see keep_synced_plugins_off.
+SYNCED_PLUGINS = bool(OPTIONS.get("synced_plugins", False))
 # How full a window may get before work stops. One figure per window, because the two are
 # not the same question: the five-hour window refills while the day goes on, so spending it
 # to the brim costs an hour of waiting, while the week is what a fortnight of work has to
@@ -498,6 +501,50 @@ def read_settings() -> dict:
     return read_json(SETTINGS_PATH, {}) or {}
 
 
+# settings.json is read, changed and written back from more than one thread now: a request
+# saving it, and every worker switching off a plugin that synced in since the last turn.
+SETTINGS_LOCK = threading.Lock()
+
+
+def synced_plugin_ids() -> set[str]:
+    """`<name>@synced` for every plugin claude.ai has synced into this home.
+
+    Named from the manifest rather than the directory, which can carry a generation suffix
+    (`figma~g2`) the plugin's id does not.
+    """
+    ids = set()
+    for manifest in (HOME / ".claude" / "plugins" / "synced").glob("*/manifest.json"):
+        plugins = (read_json(manifest, {}) or {}).get("plugins")
+        for plugin in plugins if isinstance(plugins, list) else []:
+            name = plugin.get("name") if isinstance(plugin, dict) else None
+            if isinstance(name, str) and SAFE_NAME.fullmatch(name):
+                ids.add(f"{name}@synced")
+    return ids
+
+
+def keep_synced_plugins_off() -> list[str]:
+    """Switch off synced plugins nobody has decided about yet; the ids switched off.
+
+    A plugin already named in `enabledPlugins` is left as it is, whichever way: switching
+    one back on by hand is a decision, and this only fills in the default. Called before
+    every turn, because the CLI syncs new ones while it runs — a plugin that arrives during
+    one turn is off from the next.
+    """
+    if SYNCED_PLUGINS:
+        return []
+    with SETTINGS_LOCK:
+        settings = read_settings()
+        enabled = settings.get("enabledPlugins")
+        enabled = enabled if isinstance(enabled, dict) else {}
+        new = sorted(synced_plugin_ids() - set(enabled))
+        if new:
+            settings["enabledPlugins"] = {**enabled, **dict.fromkeys(new, False)}
+            SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            write_json(SETTINGS_PATH, settings)
+            print(f"[api] synced plugins switched off: {', '.join(new)}", flush=True)
+    return new
+
+
 def write_settings(text: str) -> dict:
     """Validate and store Claude Code's user settings.
 
@@ -529,8 +576,9 @@ def write_settings(text: str) -> dict:
         raise ApiError(400, "'env' must be an object")
     env.update(REQUIRED_ENV)
 
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    write_json(SETTINGS_PATH, data)
+    with SETTINGS_LOCK:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        write_json(SETTINGS_PATH, data)
     print("[api] settings saved", flush=True)
     return data
 
@@ -1523,6 +1571,9 @@ def run_job(job_id: str) -> None:
     job["status"] = "running"
     job["started_at"] = now()
     write_job(job)
+    # A settings file that cannot be written is not a reason to refuse the turn.
+    with contextlib.suppress(OSError):
+        keep_synced_plugins_off()
 
     argv = [
         "claude",
@@ -3438,6 +3489,7 @@ def main() -> None:
     CHAT_DIR.mkdir(parents=True, exist_ok=True)
     reconcile_interrupted_jobs()
     reconcile_interrupted_update()
+    keep_synced_plugins_off()
     for _ in range(MAX_PARALLEL):
         threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=auto_update_loop, daemon=True).start()
