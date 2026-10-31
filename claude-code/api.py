@@ -152,6 +152,8 @@ MAX_EXTRACTED = 512 * 1024 * 1024
 MAX_MEMBERS = 20_000
 MAX_RESULT_CHARS = 100_000
 MAX_ERROR_CHARS = 4000
+# A system prompt is instructions, not material: anything longer belongs in the prompt.
+MAX_SYSTEM_PROMPT_CHARS = 20_000
 # Jobs carry uploads and produced files, so few are kept. Chat turns are text
 # only, and they are the conversation history, so they are kept far longer.
 JOBS_KEPT = 50
@@ -1171,6 +1173,23 @@ def create_job(payload: dict) -> dict:
     if resume and not SESSION_ID.fullmatch(resume):
         raise ApiError(400, "resume must be a session id")
 
+    # A turn that only has to talk: no tools, no skills, no MCP servers. Claude Code's own
+    # prompt is mostly the description of what it can do, and a question to a voice
+    # assistant needs none of it — dropping it cuts the input by an order of magnitude and
+    # the wait by seconds.
+    lean = payload.get("lean", False)
+    if not isinstance(lean, bool):
+        raise ApiError(400, "lean must be true or false")
+    # In place of Claude Code's own system prompt. Not kept with the conversation: a caller
+    # resuming one sends it again on every turn, the way the CLI itself takes it.
+    system_prompt = payload.get("system_prompt")
+    if system_prompt is not None and (
+        not isinstance(system_prompt, str) or not system_prompt.strip()
+    ):
+        raise ApiError(400, "system_prompt must be a non-empty string")
+    if system_prompt is not None and len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+        raise ApiError(413, f"system_prompt is over {MAX_SYSTEM_PROMPT_CHARS} characters")
+
     prune_jobs()
 
     job_id = uuid.uuid4().hex[:12]
@@ -1193,6 +1212,8 @@ def create_job(payload: dict) -> dict:
         "command": command,
         "title": title,
         "resumed_from": resume,
+        "lean": lean,
+        "system_prompt": system_prompt,
         "session_id": None,
         "context": None,
         "created_at": now(),
@@ -1527,6 +1548,13 @@ def run_job(job_id: str) -> None:
         argv += ["--model", job["model"]]
     if job.get("effort"):
         argv += ["--effort", job["effort"]]
+    if job.get("lean"):
+        # No built-in tools, no skills or slash commands, and no MCP server but the ones
+        # named on the command line — of which there are none.
+        argv += ["--tools", "", "--disable-slash-commands", "--strict-mcp-config"]
+    if job.get("system_prompt"):
+        # One argument with `=`, so a prompt that begins with `--` is not read as a flag.
+        argv.append(f"--system-prompt={job['system_prompt']}")
     # Resolved now rather than at queue time, so a message that waited its turn
     # continues the conversation the previous turn created.
     #
