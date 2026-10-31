@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.25.0
+
+- **Plugins synced from claude.ai are off unless asked for.** An account in an
+  organisation gets its plugins — Figma, engineering workflows, plugin management — synced
+  into the CLI and switched on, and each brings its skills into every turn: on one add-on
+  that was 29 skills nobody in a house needs, before the question. The new `synced_plugins`
+  option, off by default, writes each synced plugin into `settings.json` as disabled, at
+  start and before every turn, so one that arrives later is off from the turn after. A
+  plugin already named there — switched back on with `claude plugin enable` — is left as
+  it is.
+
 ## 1.24.0
 
 - **Lean turns, for callers that only need an answer.** Every turn carried Claude Code's

@@ -78,6 +78,14 @@ configuration:
       the console — and the turns of one conversation still run one after another.
       Each is a CLI process of a few hundred megabytes; 1 brings back the old one-at-a-
       time queue.
+  synced_plugins:
+    name: Plugins synced from claude.ai
+    description: >-
+      Plugins your claude.ai account or organisation provides — design tools,
+      engineering workflows — arrive switched on, and every one adds its skills to
+      every turn. Off keeps them off: each synced plugin is disabled in the CLI's
+      settings unless you switched it on yourself with claude plugin enable. On leaves
+      them as claude.ai sends them.
   auto_update:
     name: Update the CLI automatically
     description: >-

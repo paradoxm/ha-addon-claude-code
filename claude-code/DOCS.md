@@ -206,6 +206,7 @@ Uninstalling the add-on does remove the volume. If a skill exists only here, use
 | `permission_mode` | `manual` | What the agent may do unasked: `manual` asks, `plan` only plans, `acceptEdits` writes files, `auto` and `dontAsk` run tools freely. `bypassPermissions` is deliberately not offered. |
 | `api_token` | empty | Required before the API accepts traffic from the network. See below. |
 | `timeout_minutes` | `90` | A run past this is killed and the job marked failed. |
+| `synced_plugins` | `false` | Plugins claude.ai syncs to the account stay disabled unless switched on by hand with `claude plugin enable <name>@synced`. `true` leaves them as they come. |
 | `max_parallel` | `5` | How many turns run at once. Different conversations run side by side; one conversation's turns still run in order. `1` is the old one-at-a-time queue. |
 | `auto_update` | `true` | Install a newer CLI by itself. See below. |
 | `update_channel` | `latest` | `latest` takes every release; `stable` runs about a week behind and skips releases with major regressions. |
