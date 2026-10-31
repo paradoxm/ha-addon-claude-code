@@ -293,6 +293,62 @@ def test_default_is_not_a_model_but_the_absence_of_one(addon, client, monkeypatc
     assert "default" not in argv[0]
 
 
+def test_a_lean_turn_is_spawned_with_nothing_but_the_conversation(addon, client, monkeypatch):
+    """No tools, no skills, no MCP servers: what makes a voice answer take three seconds
+    instead of seven."""
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(client, "just talk", lean=True, start=True)
+    assert job["lean"] is True
+    wait_for_status(client, job["id"], "done")
+
+    spawned = argv[0]
+    assert spawned[spawned.index("--tools") + 1] == ""
+    assert "--disable-slash-commands" in spawned
+    assert "--strict-mcp-config" in spawned
+    assert "--mcp-config" not in spawned, "strict with nothing named is no servers at all"
+
+
+def test_an_ordinary_turn_keeps_everything_it_had(addon, client, monkeypatch):
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(client, "work", start=True)
+    wait_for_status(client, job["id"], "done")
+
+    assert job["lean"] is False
+    assert job["system_prompt"] is None
+    for flag in ("--tools", "--disable-slash-commands", "--strict-mcp-config"):
+        assert flag not in argv[0]
+    assert not any(arg.startswith("--system-prompt") for arg in argv[0])
+
+
+def test_a_system_prompt_is_passed_as_one_argument_whatever_it_begins_with(
+    addon, client, monkeypatch
+):
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(client, "hi", system_prompt="--verbose is not a flag here", start=True)
+    wait_for_status(client, job["id"], "done")
+
+    assert "--system-prompt=--verbose is not a flag here" in argv[0]
+
+
+@pytest.mark.parametrize(
+    ("fields", "status", "message"),
+    [
+        ({"lean": "yes"}, 400, "lean must be true or false"),
+        ({"system_prompt": "   "}, 400, "system_prompt must be a non-empty string"),
+        ({"system_prompt": 42}, 400, "system_prompt must be a non-empty string"),
+        ({"system_prompt": "x" * 20_001}, 413, "system_prompt is over"),
+    ],
+)
+def test_lean_and_system_prompt_are_checked(client, fields, status, message):
+    answer = client.send_json("POST", "/jobs", {"prompt": "x", **fields})
+
+    assert answer.status == status
+    assert message in answer.json["error"]
+
+
 def test_a_job_falls_back_to_the_add_on_s_own_defaults(addon, client):
     job = create_job(client, "with no settings")
 

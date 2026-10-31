@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.24.0
+
+- **Lean turns, for callers that only need an answer.** Every turn carried Claude Code's
+  whole kit: the built-in tools, every skill, any MCP server — some 25,000 tokens before the
+  question, read on every turn, and seconds of start-up spent loading it. A job may now say
+  `lean: true` to leave all of that out (`--tools ""`, `--disable-slash-commands`,
+  `--strict-mcp-config`), and give a `system_prompt` of its own in place of Claude Code's.
+  On a desktop install a one-word answer went from about seven seconds and 30,000 tokens in
+  to about three seconds and 4,000. Ordinary turns are unchanged.
+
 ## 1.23.0
 
 - **Several turns at once.** Every turn used to wait for the one before it, whoever sent

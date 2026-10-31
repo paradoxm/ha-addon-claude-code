@@ -356,8 +356,8 @@ carries `partial` — the reply as far as it has been written — and `activity`
 few tool calls with the file or command each was pointed at. That is what a caller
 shows someone who is waiting: a long run is often quiet for minutes at a time.
 
-A job may carry `effort`, `permission_mode`, `resume`, `source` and `title` alongside
-`prompt` and `model`. `{job_dir}` and `{job_id}` in a prompt are replaced with the job's own
+A job may carry `effort`, `permission_mode`, `resume`, `source`, `title`, `lean` and
+`system_prompt` alongside `prompt` and `model`. `{job_dir}` and `{job_id}` in a prompt are replaced with the job's own
 directory and id when it is created, which is how a prompt names the folder its
 uploads are in. `source` says who sent the job: the console leaves it alone, and
 anything else — a script driving the API, say — names itself, which keeps its
@@ -371,6 +371,14 @@ while the first turn is still running: a conversation opened by a skill is other
 under the skill's own opening lines, the same ones for every conversation it opens. It is
 ignored by a turn that resumes a conversation, which has a name already, and by a job that
 is not a chat turn, whose session nothing lists. Renaming one later is `POST /chat/rename`. The chat routes are the same machinery with `chat: true` set.
+
+`lean: true` is a turn that only has to talk: no built-in tools, no skills or slash
+commands, no MCP servers. Most of what Claude Code sends with every turn is the description
+of what it can do — some 25,000 tokens — and a question to a voice assistant needs none of
+it, so a lean turn answers seconds sooner. `system_prompt` replaces Claude Code's
+own system prompt (up to 20,000 characters); it is not kept with the conversation, so a
+caller resuming one sends it again on every turn. The two go together naturally but either
+works alone.
 
 Turns of different conversations run at the same time, up to `max_parallel` of them; past
 that they wait in order. A conversation takes its turns one at a time whatever the setting:
