@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.26.0
+
+- **A turn can keep the tools it needs.** A lean turn had no tools at all, so a voice
+  assistant could not look anything up. A job may now name its built-in tools in `tools`
+  — `["WebSearch"]` — and has those and no others (`--tools`). A tool named there is also
+  allowed without asking: under `dontAsk` a web search was refused otherwise.
+
 ## 1.25.0
 
 - **Plugins synced from claude.ai are off unless asked for.** An account in an

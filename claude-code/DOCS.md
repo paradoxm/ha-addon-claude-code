@@ -357,8 +357,8 @@ carries `partial` — the reply as far as it has been written — and `activity`
 few tool calls with the file or command each was pointed at. That is what a caller
 shows someone who is waiting: a long run is often quiet for minutes at a time.
 
-A job may carry `effort`, `permission_mode`, `resume`, `source`, `title`, `lean` and
-`system_prompt` alongside `prompt` and `model`. `{job_dir}` and `{job_id}` in a prompt are replaced with the job's own
+A job may carry `effort`, `permission_mode`, `resume`, `source`, `title`, `lean`,
+`system_prompt` and `tools` alongside `prompt` and `model`. `{job_dir}` and `{job_id}` in a prompt are replaced with the job's own
 directory and id when it is created, which is how a prompt names the folder its
 uploads are in. `source` says who sent the job: the console leaves it alone, and
 anything else — a script driving the API, say — names itself, which keeps its
@@ -380,6 +380,10 @@ it, so a lean turn answers seconds sooner. `system_prompt` replaces Claude Code'
 own system prompt (up to 20,000 characters); it is not kept with the conversation, so a
 caller resuming one sends it again on every turn. The two go together naturally but either
 works alone.
+
+`tools` is a list of built-in tools the turn keeps, in place of the whole set — `["WebSearch"]`
+for a lean voice turn that may still look things up, `[]` for none. A tool named there is
+also allowed without asking, so it works under `dontAsk` too.
 
 Turns of different conversations run at the same time, up to `max_parallel` of them; past
 that they wait in order. A conversation takes its turns one at a time whatever the setting:

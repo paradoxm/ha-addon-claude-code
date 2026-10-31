@@ -309,6 +309,36 @@ def test_a_lean_turn_is_spawned_with_nothing_but_the_conversation(addon, client,
     assert "--mcp-config" not in spawned, "strict with nothing named is no servers at all"
 
 
+def test_a_lean_turn_keeps_the_tools_it_names_and_may_use_them_without_asking(
+    addon, client, monkeypatch
+):
+    """A voice turn that searches the web: without the allowance, dontAsk refuses it."""
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(
+        client, "news", lean=True, tools=["WebSearch", "Read"], permission_mode="dontAsk",
+        start=True,
+    )
+    assert job["tools"] == ["WebSearch", "Read"]
+    wait_for_status(client, job["id"], "done")
+
+    spawned = argv[0]
+    assert spawned[spawned.index("--tools") + 1] == "WebSearch,Read"
+    allowed = spawned[spawned.index("--allowedTools") + 1]
+    assert allowed == "Bash,Read,Write,Edit,Glob,Grep,WebSearch"
+    assert "--strict-mcp-config" in spawned
+
+
+def test_tools_alone_narrow_an_ordinary_turn(addon, client, monkeypatch):
+    argv = spawned_argv(addon, monkeypatch)
+
+    job = create_job(client, "read only", tools=[], start=True)
+    wait_for_status(client, job["id"], "done")
+
+    assert argv[0][argv[0].index("--tools") + 1] == ""
+    assert "--strict-mcp-config" not in argv[0]
+
+
 def test_an_ordinary_turn_keeps_everything_it_had(addon, client, monkeypatch):
     argv = spawned_argv(addon, monkeypatch)
 
@@ -317,6 +347,7 @@ def test_an_ordinary_turn_keeps_everything_it_had(addon, client, monkeypatch):
 
     assert job["lean"] is False
     assert job["system_prompt"] is None
+    assert job["tools"] is None
     for flag in ("--tools", "--disable-slash-commands", "--strict-mcp-config"):
         assert flag not in argv[0]
     assert not any(arg.startswith("--system-prompt") for arg in argv[0])
@@ -340,6 +371,11 @@ def test_a_system_prompt_is_passed_as_one_argument_whatever_it_begins_with(
         ({"system_prompt": "   "}, 400, "system_prompt must be a non-empty string"),
         ({"system_prompt": 42}, 400, "system_prompt must be a non-empty string"),
         ({"system_prompt": "x" * 20_001}, 413, "system_prompt is over"),
+        ({"tools": "WebSearch"}, 400, "tools must be a list of tool names"),
+        ({"tools": ["Web Search"]}, 400, "tools must be a list of tool names"),
+        ({"tools": ["Bash(rm:*)"]}, 400, "tools must be a list of tool names"),
+        ({"tools": [7]}, 400, "tools must be a list of tool names"),
+        ({"tools": ["Read"] * 51}, 400, "tools must be a list of tool names"),
     ],
 )
 def test_lean_and_system_prompt_are_checked(client, fields, status, message):

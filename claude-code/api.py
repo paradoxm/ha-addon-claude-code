@@ -312,6 +312,12 @@ SETTINGS_PATH = HOME / ".claude" / "settings.json"
 # reapplied on every save so a hand-edited file cannot break search.
 REQUIRED_ENV = {"USE_BUILTIN_RIPGREP": "0"}
 SESSION_ID = re.compile(r"[0-9a-fA-F-]{8,64}")
+# A built-in tool's name, as `--tools` and `--allowedTools` take it: WebSearch, Read.
+TOOL_NAME = re.compile(r"[A-Za-z]{1,64}")
+# The built-in tools every turn may use without asking. Skills run their own scripts, so
+# Bash has to be among them — a convenience for the agent, not a security boundary; see
+# the module docstring.
+ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 SLASH_COMMAND = re.compile(r"/(compact|rename|clear|model|effort)\b")
 
 # Claude Code records far more than the conversation. A slash command, its output,
@@ -1237,6 +1243,16 @@ def create_job(payload: dict) -> dict:
         raise ApiError(400, "system_prompt must be a non-empty string")
     if system_prompt is not None and len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
         raise ApiError(413, f"system_prompt is over {MAX_SYSTEM_PROMPT_CHARS} characters")
+    # The built-in tools the turn has, in place of all of them: a lean voice turn that may
+    # still search the web. Named here, a tool is also allowed without asking, so it works
+    # under dontAsk as well.
+    tools = payload.get("tools")
+    if tools is not None and (
+        not isinstance(tools, list)
+        or len(tools) > 50
+        or not all(isinstance(tool, str) and TOOL_NAME.fullmatch(tool) for tool in tools)
+    ):
+        raise ApiError(400, "tools must be a list of tool names")
 
     prune_jobs()
 
@@ -1262,6 +1278,7 @@ def create_job(payload: dict) -> dict:
         "resumed_from": resume,
         "lean": lean,
         "system_prompt": system_prompt,
+        "tools": tools,
         "session_id": None,
         "context": None,
         "created_at": now(),
@@ -1580,11 +1597,8 @@ def run_job(job_id: str) -> None:
         "-p",
         "--permission-mode",
         job.get("permission_mode") or DEFAULT_PERMISSION_MODE,
-        # Skills run their own scripts, so Bash has to be allowed. This is a
-        # convenience for the agent, not a security boundary — see the module
-        # docstring.
         "--allowedTools",
-        "Bash,Read,Write,Edit,Glob,Grep",
+        ",".join(dict.fromkeys(ALLOWED_TOOLS + (job.get("tools") or []))),
         # Streaming so the reply can be shown as it is produced. --verbose is
         # required alongside --include-partial-messages, and the final `result`
         # record carries everything the single-shot json format did.
@@ -1599,10 +1613,12 @@ def run_job(job_id: str) -> None:
         argv += ["--model", job["model"]]
     if job.get("effort"):
         argv += ["--effort", job["effort"]]
+    if job.get("lean") or job.get("tools") is not None:
+        argv += ["--tools", ",".join(job.get("tools") or [])]
     if job.get("lean"):
-        # No built-in tools, no skills or slash commands, and no MCP server but the ones
-        # named on the command line — of which there are none.
-        argv += ["--tools", "", "--disable-slash-commands", "--strict-mcp-config"]
+        # No built-in tools but the ones named, no skills or slash commands, and no MCP
+        # server but the ones named on the command line — of which there are none.
+        argv += ["--disable-slash-commands", "--strict-mcp-config"]
     if job.get("system_prompt"):
         # One argument with `=`, so a prompt that begins with `--` is not read as a flag.
         argv.append(f"--system-prompt={job['system_prompt']}")
