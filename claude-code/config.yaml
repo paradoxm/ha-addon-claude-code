@@ -1,6 +1,6 @@
 ---
 name: Claude Code
-version: "1.22.0"
+version: "1.23.0"
 slug: claude_code
 description: >-
   Claude Code CLI with a console for talking to it, your own skills, and an HTTP
@@ -36,6 +36,7 @@ options:
   effort: medium
   permission_mode: manual
   timeout_minutes: 90
+  max_parallel: 5
   session_threshold: 90
   week_threshold: 90
   guard_limits: true
@@ -56,6 +57,9 @@ schema:
   # it required again.
   api_token: password?
   timeout_minutes: int(5,720)
+  # Turns of different conversations run side by side, up to this many; one conversation
+  # still takes its turns in order. Each turn is a CLI process of a few hundred megabytes.
+  max_parallel: int(1,10)?
   # How full each window of the plan's allowance may get before work stops. Two figures
   # because they are not the same question: the five-hour window refills while the day goes
   # on, the week is what a fortnight of work has to fit inside. Reported by GET /usage on

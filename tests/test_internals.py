@@ -724,8 +724,9 @@ def test_a_turn_that_ignores_the_stop_is_killed(addon, client, monkeypatch):
     job = addon.create_job({"prompt": "wedged"})
     addon.write_job({**job, "status": "running"})
     process = StubbornProcess()
-    monkeypatch.setattr(addon, "RUNNING_JOB", job["id"])
-    monkeypatch.setattr(addon, "RUNNING_PROC", process)
+    turn = addon.Turn()
+    turn.proc = process
+    monkeypatch.setitem(addon.RUNNING, job["id"], turn)
     monkeypatch.setattr(addon, "time", FakeClock(lambda _seconds: None))  # the settle loop
 
     settled = addon.cancel_job(job["id"])
@@ -739,8 +740,8 @@ def test_stopping_a_turn_whose_process_has_already_gone_is_not_an_error(
 ):
     job = addon.create_job({"prompt": "already finished"})
     addon.write_job({**job, "status": "running"})
-    monkeypatch.setattr(addon, "RUNNING_JOB", job["id"])
-    monkeypatch.setattr(addon, "RUNNING_PROC", None)
+    monkeypatch.setitem(addon.RUNNING, job["id"], addon.Turn())
+    monkeypatch.setattr(addon, "SPAWN_GRACE_SEC", 0.05)
 
     settled = addon.cancel_job(job["id"])
 
@@ -1131,25 +1132,24 @@ def test_the_turn_s_process_is_waited_for_rather_than_missed(addon, monkeypatch)
     """«running» is written when the worker takes the job and the CLI appears a beat later.
     A caller acting on the status at once — freezing the turn, or stopping it — used to be
     told there was nothing there."""
-    monkeypatch.setattr(addon, "RUNNING_JOB", "a-job")
-    monkeypatch.setattr(addon, "RUNNING_PROC", None)
+    turn = addon.Turn()
+    monkeypatch.setitem(addon.RUNNING, "a-job", turn)
     started = object()
 
     def spawn_soon():
         time.sleep(0.1)
-        addon.RUNNING_PROC = started
+        turn.proc = started
 
     thread = threading.Thread(target=spawn_soon)
     thread.start()
     try:
-        assert addon.process_of_the_running_turn() is started
+        assert addon.process_of_the_running_turn("a-job") is started
     finally:
         thread.join()
 
 
 def test_waiting_for_a_process_gives_up_rather_than_hanging(addon, monkeypatch):
-    monkeypatch.setattr(addon, "RUNNING_JOB", "a-job")
-    monkeypatch.setattr(addon, "RUNNING_PROC", None)
+    monkeypatch.setitem(addon.RUNNING, "a-job", addon.Turn())
     monkeypatch.setattr(addon, "SPAWN_GRACE_SEC", 0.05)
 
-    assert addon.process_of_the_running_turn() is None
+    assert addon.process_of_the_running_turn("a-job") is None

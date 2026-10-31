@@ -315,7 +315,7 @@ def test_the_worker_survives_a_job_that_crashes_it(addon, client, monkeypatch):
     monkeypatch.setattr(addon, "run_job", explode)
     crashing = create_job(client, "crashes the worker", start=True)
     wait_until(
-        lambda: crashed.is_set() and addon.JOB_QUEUE.qsize() == 0 and addon.RUNNING_JOB is None,
+        lambda: crashed.is_set() and not addon.PENDING and not addon.turns_running(),
         description="the worker to swallow the crash",
     )
     monkeypatch.undo()
@@ -330,10 +330,12 @@ def test_a_job_stopped_while_it_waited_is_never_run(addon, client):
     job = create_job(client, "cancelled before the worker got to it")
     addon.write_job({**job, "status": "failed", "error": "stopped before it started"})
 
-    addon.JOB_QUEUE.put(job["id"])
+    with addon.SLOTS:
+        addon.PENDING.append(job["id"])
+        addon.SLOTS.notify_all()
 
     wait_until(
-        lambda: addon.JOB_QUEUE.qsize() == 0,
+        lambda: not addon.PENDING,
         description="the worker to skip the stopped job",
     )
 
@@ -464,7 +466,7 @@ def test_a_frozen_turn_can_still_be_stopped(addon, client, stub_behaviour):
 
     assert stopped.json["status"] == "failed"
     assert stopped.json["error"] == "stopped"
-    assert addon.PAUSED_AT is None
+    assert not addon.is_paused(job["id"])
 
 
 @pytest.mark.parametrize("what", ["pause", "resume"])
@@ -492,7 +494,7 @@ def test_a_frozen_turn_does_not_spend_its_own_timeout(addon, client, stub_behavi
     wait_for_status(client, job["id"], "running")
 
     client.send_json("POST", f"/jobs/{job['id']}/pause")
-    wait_until(lambda: addon.PAUSED_AT is not None, description="the freeze to take")
+    wait_until(lambda: addon.is_paused(job["id"]), description="the freeze to take")
     import time as clock
 
     clock.sleep(3)  # so the wall clock outlasts the timeout while the run does not

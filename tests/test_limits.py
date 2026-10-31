@@ -190,9 +190,9 @@ def test_a_reading_that_cannot_be_had_leaves_a_running_turn_alone(addon, monkeyp
 
 
 def test_with_nothing_running_the_watcher_barely_stirs(addon):
-    """RUNNING_JOB is written by the worker thread, so it is never patched here: a test
-    that lies about it also lies to the thread that is watching."""
-    assert addon.RUNNING_JOB is None
+    """What is running is written by the worker threads, so it is never patched here: a
+    test that lies about it also lies to the thread that is watching."""
+    assert addon.turns_running() == []
 
     assert addon.limit_watch_once() == addon.WATCH_IDLE_SEC
 
@@ -260,7 +260,7 @@ def test_the_watch_loop_keeps_looking(addon, monkeypatch):
 
 
 def test_a_pause_does_not_outlive_the_turn_it_belongs_to(addon, client, stub_behaviour):
-    """PAUSED_AT is one process's business.
+    """A pause is one process's business.
 
     Left set after a turn ended, it defeated the next turn's timeout — the deadline was
     extended for every second the flag was up — and stopped the guard from ever freezing
@@ -270,12 +270,12 @@ def test_a_pause_does_not_outlive_the_turn_it_belongs_to(addon, client, stub_beh
     job = create_job(client, "frozen, then finished", start=True)
     wait_for_status(client, job["id"], "running")
     client.send_json("POST", f"/jobs/{job['id']}/pause")
-    assert addon.PAUSED_AT is not None
+    assert addon.is_paused(job["id"])
 
     client.send_json("POST", f"/jobs/{job['id']}/cancel")
     wait_for_status(client, job["id"], "failed")
 
-    assert addon.PAUSED_AT is None
+    assert not addon.is_paused(job["id"])
     assert client.get("/health").json["job_paused"] is False
 
 
@@ -285,12 +285,12 @@ def test_the_guard_freezing_into_that_same_window_stops_nothing_and_says_nothing
     """The reachable version of it: the guard decided while the process was still there,
     and by the time the signal would land it had gone."""
     usage_says(addon, monkeypatch, 96.0)
-    monkeypatch.setattr(addon.RUNNING_PROC, "poll", lambda: 0)
+    monkeypatch.setattr(addon.process_of_the_running_turn(running), "poll", lambda: 0)
 
     with pytest.raises(addon.ApiError):
         addon.hold_for_limits(running)
 
-    assert addon.PAUSED_AT is None
+    assert not addon.is_paused(running)
 
 
 def test_a_turn_that_has_just_finished_cannot_be_frozen(addon, client, stub_behaviour):
@@ -302,7 +302,7 @@ def test_a_turn_that_has_just_finished_cannot_be_frozen(addon, client, stub_beha
     answer = client.send_json("POST", f"/jobs/{job['id']}/pause")
 
     assert answer.status == 409
-    assert addon.PAUSED_AT is None
+    assert not addon.is_paused(job["id"])
 
 
 def test_a_window_that_will_not_be_back_for_days_is_not_worth_freezing_for(
@@ -459,7 +459,7 @@ def waits_until_state(pid: int, wanted: set) -> str:
 def test_freezing_a_turn_stops_the_process_itself_not_only_the_record(addon, client, running):
     """The freeze used to be provable only by the flags it set. Take the signals out and
     every assertion still passed — a paused label on a turn that kept spending."""
-    pid = addon.RUNNING_PROC.pid
+    pid = addon.process_of_the_running_turn(running).pid
 
     client.send_json("POST", f"/jobs/{running}/pause")
     stopped = waits_until_state(pid, {"T"})
@@ -470,7 +470,7 @@ def test_freezing_a_turn_stops_the_process_itself_not_only_the_record(addon, cli
 
 
 def test_the_guard_freezes_the_process_too(addon, monkeypatch, running):
-    pid = addon.RUNNING_PROC.pid
+    pid = addon.process_of_the_running_turn(running).pid
     usage_says(addon, monkeypatch, 96.0)
 
     addon.hold_for_limits(running)
@@ -543,13 +543,13 @@ def test_a_turn_that_dies_while_frozen_is_not_left_looking_paused(addon, client,
     addon.update_job(job["id"], paused_reason="limits", resumes_at="2026-08-13T13:20:00+00:00")
     client.send_json("POST", f"/jobs/{job['id']}/pause")
 
-    addon.kill_tree(addon.RUNNING_PROC, signal.SIGKILL)
+    addon.kill_tree(addon.process_of_the_running_turn(job["id"]), signal.SIGKILL)
     wait_for_status(client, job["id"], "failed")
 
     finished = client.get(f"/jobs/{job['id']}").json
     assert "paused_reason" not in finished
     assert "resumes_at" not in finished
-    assert addon.PAUSED_AT is None
+    assert not addon.is_paused(job["id"])
 
 
 def test_how_often_the_allowance_may_be_read_is_one_setting(addon, monkeypatch):
