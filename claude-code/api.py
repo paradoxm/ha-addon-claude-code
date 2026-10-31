@@ -91,9 +91,20 @@ OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 # Renewed a little early, so a reading is not spent discovering the token died.
 TOKEN_MARGIN_SEC = 5 * 60
 # Two renewals racing spend the same refresh token twice, and the loser is signed out
-# rather than renewed. Only one at a time, and never while the CLI is running — it does
-# its own renewing, and the file it writes is the one read here.
+# rather than renewed. This one keeps the add-on's own threads to one renewal at a time;
+# the CLI is kept out by the file lock below, which is the one it takes itself.
 CREDENTIALS_LOCK = threading.Lock()
+# What the CLI holds while it renews: a directory made with mkdir, which either succeeds
+# or finds somebody else there — proper-lockfile's scheme, and a second, older one next to
+# `~/.claude` itself. Both are taken, because the CLI takes both. A holder refreshes the
+# directory's mtime every few seconds, so one left alone for a minute is a dead holder's.
+CLI_REFRESH_LOCKS = (
+    HOME / ".claude" / ".oauth_refresh.lock",
+    Path(f"{HOME / '.claude'}.lock"),
+)
+CLI_LOCK_STALE_SEC = 60
+# The CLI's own patience with a lock somebody else holds: five tries a second or two apart.
+CLI_LOCK_TRIES = 5
 # Polled before each run by anything driving the API, and it changes slowly.
 
 
@@ -1216,12 +1227,9 @@ def run_claude(
     with open(bookkeeping / "claude.log", "wb") as stderr, open(
         bookkeeping / "stream.jsonl", "wb"
     ) as stream:
-        # The credentials lock, held only across the spawn: the CLI renews the account's
-        # token itself, and a renewal here at the same moment would spend the same refresh
-        # token twice — which signs the account out rather than renewing it. Whoever takes
-        # the lock first wins cleanly: a renewal already under way finishes and the CLI
-        # starts on the token it wrote, or the CLI starts first and the renewal sees a
-        # running turn and declines.
+        # The credentials lock, held only across the spawn, so a renewal of ours that is
+        # under way finishes writing before the CLI reads the file. Once it runs, the CLI
+        # and this add-on keep out of each other's renewals through the CLI's file lock.
         with CREDENTIALS_LOCK:
             process = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
                 argv,
@@ -1794,7 +1802,7 @@ def keep_the_sign_in_warm() -> None:
     and a clock reading on each tick, and a request once every few hours.
     """
     ticks = time.monotonic()
-    if RUNNING_PROC is not None or ticks < TOKEN_KEEP["until"]:
+    if ticks < TOKEN_KEEP["until"]:
         return
     # No faster than the one setting that governs how often anything of Anthropic's is
     # touched, even though a look is only a file and a clock. Two hours of margin against a
@@ -1802,12 +1810,14 @@ def keep_the_sign_in_warm() -> None:
     if ticks - TOKEN_KEEP["looked"] < USAGE_TTL_SEC:
         return
     TOKEN_KEEP["looked"] = ticks
-    expires_at = (credentials().get("claudeAiOauth") or {}).get("expiresAt")
+    oauth = credentials().get("claudeAiOauth") or {}
+    expires_at = oauth.get("expiresAt")
     if not isinstance(expires_at, int | float) or isinstance(expires_at, bool):
         return
     if expires_at / 1000 - time.time() > TOKEN_KEEP_SEC:
         return
-    if renew_access_token():
+    # A running turn may get there first; then its token is the renewal, and this is done.
+    if renew_access_token(oauth.get("accessToken")):
         TOKEN_KEEP["until"] = 0.0
         print("[api] the sign-in was renewed before it ran out", flush=True)
     else:
@@ -1997,22 +2007,73 @@ def credentials() -> dict:
     return stored if isinstance(stored, dict) else {}
 
 
-def renew_access_token() -> str | None:
+def take_cli_lock(path: Path) -> bool:
+    """mkdir the lock directory, clearing it first if its holder has stopped tending it."""
+    try:
+        path.mkdir()
+        return True
+    except FileExistsError:
+        pass
+    try:
+        idle = time.time() - path.stat().st_mtime
+    except OSError:
+        idle = 0.0  # gone in the meantime: the next try takes it
+    if idle > CLI_LOCK_STALE_SEC:
+        shutil.rmtree(path, ignore_errors=True)
+    return False
+
+
+@contextlib.contextmanager
+def cli_refresh_lock():
+    """The CLI's own renewal lock, held across ours — True if it was had, False if not.
+
+    Held for one request with a twenty-second timeout, well inside the minute after which
+    the CLI would call it stale, so the mtime is never tended. Not had means somebody else
+    is renewing right now, and the caller is better off reading what they write.
+    """
+    taken: list[Path] = []
+    try:
+        for attempt in range(CLI_LOCK_TRIES):
+            for path in CLI_REFRESH_LOCKS:
+                if not take_cli_lock(path):
+                    break
+                taken.append(path)
+            else:
+                break
+            # Half a pair is no lock at all: let go and try for both again.
+            for path in taken:
+                shutil.rmtree(path, ignore_errors=True)
+            taken.clear()
+            if attempt < CLI_LOCK_TRIES - 1:
+                time.sleep(1 + attempt * 0.5)
+        yield bool(taken)
+    finally:
+        for path in taken:
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def renew_access_token(seen: str | None = None) -> str | None:
     """Trade the refresh token for a fresh access token, and write it back.
+
+    `seen` is the access token the caller judged spent. Read again under the lock, a token
+    that is no longer that one was renewed by somebody else while we waited — a turn, most
+    likely — and is used as it stands: the same check the CLI makes, which is what lets any
+    number of them and this add-on share one sign-in.
 
     Best-effort like everything around it: a file with no refresh token in it, an endpoint
     that has moved on, a refusal — all answer None, and the caller reports the allowance as
     unreadable rather than failing.
     """
-    with CREDENTIALS_LOCK:
-        # Under the lock, because a turn takes the same one across its spawn: this is what
-        # makes "never while the CLI is running" true rather than merely likely.
-        if RUNNING_PROC is not None:
+    with CREDENTIALS_LOCK, cli_refresh_lock() as held:
+        if not held:
             return None
         stored = credentials()
         oauth = stored.get("claudeAiOauth")
         if not isinstance(oauth, dict) or not isinstance(oauth.get("refreshToken"), str):
             return None
+        current = oauth.get("accessToken")
+        if seen is not None and isinstance(current, str) and current and current != seen:
+            return current
         body: dict[str, Any] = {
             "grant_type": "refresh_token",
             "refresh_token": oauth["refreshToken"],
@@ -2077,10 +2138,8 @@ def signed_in_token() -> tuple[str | None, str]:
         and not isinstance(expires_at, bool)
         and expires_at / 1000 - time.time() < TOKEN_MARGIN_SEC
     )
-    # While the CLI runs it renews its own token and writes the file this reads, so the
-    # renewal is left to it and the token in hand is used as it stands.
-    if spent and RUNNING_PROC is None:
-        return (renew_access_token(), "the sign-in has expired")
+    if spent:
+        return (renew_access_token(token), "the sign-in has expired")
     if not token:
         return None, "not signed in"
     return token, ""
@@ -2132,11 +2191,10 @@ def read_usage(force: bool = False) -> dict:
         except urllib.error.HTTPError as refused:
             # 401 here means one thing: the token is spent. The CLI answers it by renewing
             # and asking again, and so does this — otherwise the first stale token ends the
-            # readings for good. Not while the CLI is running, though: it renews its own,
-            # and both of us renewing at once would spend the refresh token twice.
-            if refused.code != 401 or RUNNING_PROC is not None:
+            # readings for good.
+            if refused.code != 401:
                 raise
-            renewed = renew_access_token()
+            renewed = renew_access_token(token)
             if not renewed:
                 answer["reason"] = "the sign-in has expired"
                 USAGE_CACHE.update(checked_at=time.monotonic(), value=answer)

@@ -405,15 +405,18 @@ asks for longer, and *refresh* cannot shorten it. The **Usage** tab in
 Settings shows both windows, when each comes back, and reads them again on request.
 
 The reading uses the sign-in from the terminal, and that access token lives about eight
-hours. The CLI renews it while it runs; the add-on keeps it warm the rest of the time — a
+hours. The CLI renews it while it runs; the add-on keeps it warm all the time — a
 token with less than two hours left is renewed, so a renewal happens every six hours or so
 whether or not anybody is looking, and the sign-in never dies of silence. Whether it is time
 is looked at no more often than `usage_check_seconds`, the same setting that paces
 everything else: one number governs how often this add-on touches anything of Anthropic's. A
 token that ran out anyway is also renewed before a reading, and once more if
-the endpoint refuses one that looked good. Never while a turn is running: the CLI renews its
-own then, and both at once would spend the same refresh token twice. When the sign-in really
-has run out, the tab says so and the add-on stops asking for half an hour.
+the endpoint refuses one that looked good. Two renewals at once would spend the same refresh
+token twice, so the add-on takes the lock the CLI itself takes to renew
+(`~/.claude/.oauth_refresh.lock`), reads the file again under it, and leaves a token alone
+that somebody renewed while it waited — any number of turns and the add-on share one sign-in
+that way. When the sign-in really has run out, the tab says so and the add-on stops asking
+for half an hour.
 
 `/state` is a small place for a caller's own notes — a key you name, a JSON object you
 own, up to half a megabyte, kept in `/data` and backed up with everything else. The

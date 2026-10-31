@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.22.0
+
+- **The sign-in is renewed under the CLI's own lock.** The add-on used to stay away from
+  the token whenever a turn was running, because the CLI renews its own and two renewals at
+  once spend the same refresh token twice — the loser is signed out. That kept the two apart,
+  but it also meant a long turn held the add-on's renewal off for its whole length, and it
+  is the one thing standing between the add-on and running more than one turn at a time.
+  The CLI already settles this among its own processes: it takes a file lock, reads the
+  credentials again under it, and does nothing if somebody else has renewed meanwhile. The
+  add-on now does exactly the same, with the same two lock directories, so a renewal is
+  never repeated just because two parties noticed the same expiry, and a running turn no
+  longer has to be waited out.
+
 ## 1.21.0
 
 - **A model called `default`, which is no model at all.** Picking it leaves `--model` off
