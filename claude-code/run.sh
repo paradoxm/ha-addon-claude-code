@@ -32,13 +32,21 @@ mkdir -p "${HOME}/.claude/skills" /data/jobs
 export PATH="${HOME}/.local/bin:${PATH}"
 
 # On musl the bundled ripgrep does not run, so point Claude Code at the distro
-# package. Written only once, so later edits to the file are preserved.
+# package. The rest is a house's defaults: no artifacts, the terminal acts without
+# asking, small workflows, and a conversation compacted at half the 1M window rather
+# than near its end. Written only once, so later edits to the file are preserved.
 if [ ! -f "${HOME}/.claude/settings.json" ]; then
     cat > "${HOME}/.claude/settings.json" <<'EOF'
 {
   "env": {
     "USE_BUILTIN_RIPGREP": "0"
-  }
+  },
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "enableArtifact": false,
+  "workflowSizeGuideline": "small",
+  "autoCompactWindow": 500000
 }
 EOF
 fi

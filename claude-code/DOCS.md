@@ -555,7 +555,10 @@ copy, which is re-downloaded after a restore.
 - **`--bare` is deliberately not used.** Bare mode skips skill discovery and
   ignores the sign-in, requiring `ANTHROPIC_API_KEY` instead.
 - **Alpine needs the distro ripgrep**, so `run.sh` writes `USE_BUILTIN_RIPGREP=0`
-  into `~/.claude/settings.json` on first start. Later edits are left alone.
+  into `~/.claude/settings.json` on first start, along with a house's defaults:
+  `permissions.defaultMode: auto`, `enableArtifact: false`,
+  `workflowSizeGuideline: small` and `autoCompactWindow: 500000`. Later edits are left
+  alone, and an existing install keeps the file it has.
 - **Failures come back readable.** The CLI reports problems in its stdout JSON
   rather than on stderr, so an unauthenticated run surfaces as
   `Not logged in · Please run /login` instead of an empty error.
