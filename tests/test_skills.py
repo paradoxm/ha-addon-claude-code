@@ -25,9 +25,7 @@ def test_a_skill_is_named_by_its_own_skill_md(client):
 
     assert answer.status == 201
     assert answer.json["name"] == "from-frontmatter"
-    assert [skill["name"] for skill in client.get("/skills").json["skills"]] == [
-        "from-frontmatter"
-    ]
+    assert [skill["name"] for skill in client.get("/skills").json["skills"]] == ["from-frontmatter"]
 
 
 def test_a_folded_description_is_read_as_one_line(client):

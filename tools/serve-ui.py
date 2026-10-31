@@ -63,17 +63,26 @@ if os.environ.get("FAKE_USAGE"):
         later = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=3)
         session: dict[str, float | str] = {
             "percent": float(os.environ.get("FAKE_SESSION", 34)),
-            "threshold": float(api.SESSION_THRESHOLD), "resets_at": soon.isoformat()}
+            "threshold": float(api.SESSION_THRESHOLD),
+            "resets_at": soon.isoformat(),
+        }
         week: dict[str, float | str] = {
             "percent": float(os.environ.get("FAKE_WEEK", 8)),
-            "threshold": float(api.WEEK_THRESHOLD), "resets_at": later.isoformat()}
+            "threshold": float(api.WEEK_THRESHOLD),
+            "resets_at": later.isoformat(),
+        }
         room = lambda w: float(w["threshold"]) - float(w["percent"])  # noqa: E731
         # The one with the least room left to its own figure, as the add-on decides it.
         worst = min(({"kind": "session", **session}, {"kind": "week", **week}), key=room)
-        return {"available": True, "session": session, "week": week, "worst": worst,
-                "thresholds": {"session": api.SESSION_THRESHOLD, "week": api.WEEK_THRESHOLD},
-                "enough": all(room(w) > 0 for w in (session, week)),
-                "checked_at": api.now()}
+        return {
+            "available": True,
+            "session": session,
+            "week": week,
+            "worst": worst,
+            "thresholds": {"session": api.SESSION_THRESHOLD, "week": api.WEEK_THRESHOLD},
+            "enough": all(room(w) > 0 for w in (session, week)),
+            "checked_at": api.now(),
+        }
 
     api.read_usage = _reading
 

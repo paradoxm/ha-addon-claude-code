@@ -64,35 +64,40 @@ def test_both_windows_are_reported_with_the_one_that_bites_first(
     usage = client.get("/usage").json
 
     assert usage["available"] is True
-    assert usage["session"] == {"percent": 96.0, "resets_at": "2026-08-12T20:40:00+00:00",
-                                "threshold": addon.SESSION_THRESHOLD}
-    assert usage["week"] == {"percent": 78.0, "resets_at": "2026-08-13T03:00:00+00:00",
-                             "threshold": addon.WEEK_THRESHOLD}
+    assert usage["session"] == {
+        "percent": 96.0,
+        "resets_at": "2026-08-12T20:40:00+00:00",
+        "threshold": addon.SESSION_THRESHOLD,
+    }
+    assert usage["week"] == {
+        "percent": 78.0,
+        "resets_at": "2026-08-13T03:00:00+00:00",
+        "threshold": addon.WEEK_THRESHOLD,
+    }
     assert usage["worst"]["kind"] == "session"
     assert usage["worst"]["percent"] == 96.0
 
 
-def test_the_reading_answers_whether_work_may_start_at_all(
-    addon, client, monkeypatch, signed_in
-):
+def test_the_reading_answers_whether_work_may_start_at_all(addon, client, monkeypatch, signed_in):
     """One number in one place: a caller watching a long run should not carry its own copy
     of what "too full" means."""
     answers_with(addon, monkeypatch, PAYLOAD)
 
     usage = client.get("/usage").json
 
-    assert usage["thresholds"] == {"session": addon.SESSION_THRESHOLD,
-                                   "week": addon.WEEK_THRESHOLD}
+    assert usage["thresholds"] == {"session": addon.SESSION_THRESHOLD, "week": addon.WEEK_THRESHOLD}
     assert usage["enough"] is False, "ninety-six per cent of a window is not enough to start on"
 
 
-def test_a_window_below_the_threshold_is_enough_to_work_on(
-    addon, client, monkeypatch, signed_in
-):
-    answers_with(addon, monkeypatch, {
-        "five_hour": {"utilization": 12, "resets_at": "2026-08-12T20:40:00Z"},
-        "seven_day": {"utilization": 40, "resets_at": "2026-08-13T03:00:00Z"},
-    })
+def test_a_window_below_the_threshold_is_enough_to_work_on(addon, client, monkeypatch, signed_in):
+    answers_with(
+        addon,
+        monkeypatch,
+        {
+            "five_hour": {"utilization": 12, "resets_at": "2026-08-12T20:40:00Z"},
+            "seven_day": {"utilization": 40, "resets_at": "2026-08-13T03:00:00Z"},
+        },
+    )
 
     usage = client.get("/usage").json
 
@@ -102,10 +107,14 @@ def test_a_window_below_the_threshold_is_enough_to_work_on(
 
 def test_the_threshold_is_the_one_set_in_the_options(addon, client, monkeypatch, signed_in):
     monkeypatch.setattr(addon, "SESSION_THRESHOLD", 30)
-    answers_with(addon, monkeypatch, {
-        "five_hour": {"utilization": 40, "resets_at": "2026-08-12T20:40:00Z"},
-        "seven_day": {"utilization": 10, "resets_at": "2026-08-13T03:00:00Z"},
-    })
+    answers_with(
+        addon,
+        monkeypatch,
+        {
+            "five_hour": {"utilization": 40, "resets_at": "2026-08-12T20:40:00Z"},
+            "seven_day": {"utilization": 10, "resets_at": "2026-08-13T03:00:00Z"},
+        },
+    )
 
     usage = client.get("/usage").json
 
@@ -188,10 +197,14 @@ def test_an_answer_in_a_shape_we_do_not_know_is_reported_as_unavailable(
 
 
 def test_a_window_without_a_number_is_ignored(addon, client, monkeypatch, signed_in):
-    answers_with(addon, monkeypatch, {
-        "five_hour": {"resets_at": "2026-08-12T20:40:00+00:00"},
-        "seven_day": PAYLOAD["seven_day"],
-    })
+    answers_with(
+        addon,
+        monkeypatch,
+        {
+            "five_hour": {"resets_at": "2026-08-12T20:40:00+00:00"},
+            "seven_day": PAYLOAD["seven_day"],
+        },
+    )
 
     usage = client.get("/usage").json
 
@@ -247,8 +260,11 @@ def test_pressing_refresh_cannot_shorten_that_wait(addon, client, monkeypatch, s
     client.get("/usage")
 
     asked = []
-    monkeypatch.setattr(addon.urllib.request, "urlopen",
-                        lambda *a, **k: asked.append(1) or (_ for _ in ()).throw(OSError("nope")))
+    monkeypatch.setattr(
+        addon.urllib.request,
+        "urlopen",
+        lambda *a, **k: asked.append(1) or (_ for _ in ()).throw(OSError("nope")),
+    )
 
     again = client.get("/usage?refresh").json
 
@@ -334,9 +350,7 @@ def two_endpoints(addon, monkeypatch, *, accepted=("renewed",), renewal=None, us
             seen["renewals"] += 1
             seen["body"] = json.loads(request.data)
             if renewal is None:
-                raise urllib.error.HTTPError(
-                    addon.TOKEN_URL, 400, "invalid_grant", {}, None
-                )
+                raise urllib.error.HTTPError(addon.TOKEN_URL, 400, "invalid_grant", {}, None)
             return Reply(renewal)
         token = request.headers["Authorization"].removeprefix("Bearer ")
         seen["asked"].append(token)
@@ -350,16 +364,20 @@ def two_endpoints(addon, monkeypatch, *, accepted=("renewed",), renewal=None, us
 
 def sign_in(addon, **oauth):
     addon.CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    addon.CREDENTIALS_PATH.write_text(json.dumps({
-        "claudeAiOauth": {
-            "accessToken": "spent",
-            "refreshToken": "renew-me",
-            "scopes": ["user:inference", "user:profile"],
-            **oauth,
-        },
-        # Somebody else's tokens live in the same file, and they are not ours to lose.
-        "mcpOAuth": {"sentry|abc": {"accessToken": "not ours"}},
-    }))
+    addon.CREDENTIALS_PATH.write_text(
+        json.dumps(
+            {
+                "claudeAiOauth": {
+                    "accessToken": "spent",
+                    "refreshToken": "renew-me",
+                    "scopes": ["user:inference", "user:profile"],
+                    **oauth,
+                },
+                # Somebody else's tokens live in the same file, and they are not ours to lose.
+                "mcpOAuth": {"sentry|abc": {"accessToken": "not ours"}},
+            }
+        )
+    )
 
 
 def stored_oauth(addon) -> dict:
@@ -377,8 +395,9 @@ def signed_in_yesterday(addon):
 def test_a_token_that_died_overnight_is_renewed_before_the_reading(
     addon, client, monkeypatch, signed_in_yesterday
 ):
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 8 * 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     usage = client.get("/usage").json
 
@@ -393,18 +412,18 @@ def test_a_token_about_to_die_is_renewed_before_it_does(
 ):
     """Otherwise the renewal costs a reading, and a reading is the thing being rationed."""
     sign_in(addon, expiresAt=int((time.time() + 60) * 1000))
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 8 * 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     assert client.get("/usage").json["available"] is True
     assert seen["renewals"] == 1
 
 
-def test_the_renewal_asks_the_way_the_cli_asks(
-    addon, client, monkeypatch, signed_in_yesterday
-):
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 8 * 3600})
+def test_the_renewal_asks_the_way_the_cli_asks(addon, client, monkeypatch, signed_in_yesterday):
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     client.get("/usage")
 
@@ -421,8 +440,9 @@ def test_a_client_id_recorded_in_the_file_is_preferred_to_our_own(
 ):
     """The file is the account's own truth; the constant is only a last resort."""
     sign_in(addon, expiresAt=0, clientId="the-file-s-own-client")
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
 
     client.get("/usage")
 
@@ -434,8 +454,9 @@ def test_a_401_on_a_token_that_looked_good_is_renewed_and_asked_again(
 ):
     """The way the CLI answers the same 401: renew, ask again, and only then give up."""
     sign_in(addon, accessToken="looks-fine", expiresAt=int((time.time() + 8 * 3600) * 1000))
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 8 * 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     usage = client.get("/usage").json
 
@@ -462,8 +483,11 @@ def test_a_new_refresh_token_replaces_the_spent_one(
     addon, client, monkeypatch, signed_in_yesterday
 ):
     """A renewal may rotate it, and keeping the old one would make the next renewal fail."""
-    two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600,
-                                               "refresh_token": "the-next-one"})
+    two_endpoints(
+        addon,
+        monkeypatch,
+        renewal={"access_token": "renewed", "expires_in": 3600, "refresh_token": "the-next-one"},
+    )
 
     client.get("/usage")
 
@@ -481,8 +505,11 @@ def test_a_renewal_without_a_new_refresh_token_keeps_the_old_one(
 
 
 def test_scopes_the_renewal_reports_are_kept(addon, client, monkeypatch, signed_in_yesterday):
-    two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600,
-                                               "scope": "user:inference"})
+    two_endpoints(
+        addon,
+        monkeypatch,
+        renewal={"access_token": "renewed", "expires_in": 3600, "scope": "user:inference"},
+    )
 
     client.get("/usage")
 
@@ -507,8 +534,9 @@ def test_a_running_turn_no_longer_keeps_the_renewal_away(
     """The CLI's own file lock is what keeps the two renewals apart now, so a reading taken
     while a turn runs renews a dead token instead of reporting it."""
     monkeypatch.setitem(addon.RUNNING, "a-turn", addon.Turn())
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
 
     usage = client.get("/usage").json
 
@@ -531,11 +559,12 @@ def test_a_token_with_no_expiry_recorded_is_used_as_it_is(
 def test_a_file_with_no_refresh_token_in_it_cannot_renew(
     addon, client, monkeypatch, signed_in_yesterday
 ):
-    addon.CREDENTIALS_PATH.write_text(json.dumps({
-        "claudeAiOauth": {"accessToken": "spent", "expiresAt": 0}
-    }))
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 3600})
+    addon.CREDENTIALS_PATH.write_text(
+        json.dumps({"claudeAiOauth": {"accessToken": "spent", "expiresAt": 0}})
+    )
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
 
     usage = client.get("/usage").json
 
@@ -561,8 +590,9 @@ def test_a_token_that_could_not_be_saved_is_still_used(
 ):
     """A read-only volume is a reason to renew again next time, not to stop reading."""
     two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600})
-    monkeypatch.setattr(addon, "write_credentials",
-                        lambda _stored: (_ for _ in ()).throw(OSError("read-only")))
+    monkeypatch.setattr(
+        addon, "write_credentials", lambda _stored: (_ for _ in ()).throw(OSError("read-only"))
+    )
 
     assert client.get("/usage").json["available"] is True
 
@@ -594,8 +624,9 @@ def test_a_renewal_answering_something_that_is_not_a_token_is_refused(
 def test_a_sign_in_with_no_token_in_it_is_no_sign_in(addon, client, monkeypatch):
     """Half a credentials file is what a failed login leaves behind."""
     addon.CREDENTIALS_PATH.write_text(json.dumps({"claudeAiOauth": {"scopes": []}}))
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
 
     usage = client.get("/usage").json
 
@@ -631,8 +662,9 @@ def test_a_token_somebody_else_renewed_meanwhile_is_used_as_it_is(
     """The check the CLI makes under its lock: the token in the file is no longer the one
     judged spent, so a turn renewed it while we waited — renewing again would only spend
     the refresh token it just got."""
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
     sign_in(addon, accessToken="the turn's", expiresAt=int((time.time() + 8 * 3600) * 1000))
 
     assert addon.renew_access_token("spent") == "the turn's"
@@ -661,8 +693,9 @@ def test_a_renewal_takes_both_of_the_cli_s_locks_and_gives_them_back(
 def test_a_cli_renewing_right_now_is_left_to_it(addon, monkeypatch, signed_in_yesterday):
     """A lock with a live holder is waited on the way the CLI waits, and then given up on:
     whoever holds it is renewing, and the next reading will find what they wrote."""
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
     naps = []
     monkeypatch.setattr(addon.time, "sleep", naps.append)
     addon.CLI_REFRESH_LOCKS[0].mkdir(parents=True)
@@ -679,8 +712,9 @@ def test_a_cli_renewing_right_now_is_left_to_it(addon, monkeypatch, signed_in_ye
 
 def test_a_lock_left_by_a_dead_cli_is_cleared(addon, monkeypatch, signed_in_yesterday):
     """Nobody tends it any more, so its mtime falls behind — exactly what the CLI checks."""
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                      "expires_in": 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
     monkeypatch.setattr(addon.time, "sleep", lambda seconds: None)
     dead = addon.CLI_REFRESH_LOCKS[1]
     dead.mkdir(parents=True)
@@ -726,8 +760,9 @@ def test_a_token_near_its_end_is_renewed_on_a_tick_of_its_own(
 ):
     """Nobody has to be looking: this is the whole point of it."""
     sign_in(addon, expiresAt=int((time.time() + 30 * 60) * 1000))
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                     "expires_in": 8 * 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     addon.limit_watch_once()
 
@@ -738,8 +773,9 @@ def test_a_token_near_its_end_is_renewed_on_a_tick_of_its_own(
 
 def test_a_token_with_hours_left_is_left_alone(addon, monkeypatch, signed_in_yesterday):
     sign_in(addon, expiresAt=int((time.time() + 7 * 3600) * 1000))
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                     "expires_in": 8 * 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     addon.limit_watch_once()
 
@@ -753,8 +789,9 @@ def test_the_sign_in_is_kept_warm_even_with_the_guard_switched_off(
     with an add-on that has to be signed in again by hand."""
     monkeypatch.setattr(addon, "GUARD_LIMITS", False)
     sign_in(addon, expiresAt=int((time.time() + 30 * 60) * 1000))
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                     "expires_in": 8 * 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     addon.limit_watch_once()
 
@@ -769,8 +806,9 @@ def test_the_sign_in_is_kept_warm_while_a_turn_is_running_too(
     sign_in(addon, expiresAt=int((time.time() + 30 * 60) * 1000))
     monkeypatch.setattr(addon, "GUARD_LIMITS", False)
     monkeypatch.setitem(addon.RUNNING, "a-turn", addon.Turn())
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                     "expires_in": 8 * 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 8 * 3600}
+    )
 
     addon.limit_watch_once()
 
@@ -805,8 +843,9 @@ def test_a_sign_in_with_no_expiry_recorded_is_not_touched_by_the_tick(
 ):
     """Nothing is known about when it dies, so there is nothing to be early about."""
     sign_in(addon)
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                     "expires_in": 3600})
+    seen = two_endpoints(
+        addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 3600}
+    )
 
     addon.limit_watch_once()
 
@@ -818,8 +857,9 @@ def test_a_renewal_blowing_up_does_not_take_the_watcher_with_it(
 ):
     """It is the thread that also freezes and thaws turns; it must outlive any one reading."""
     sign_in(addon, expiresAt=int((time.time() + 30 * 60) * 1000))
-    monkeypatch.setattr(addon, "credentials",
-                        lambda: (_ for _ in ()).throw(RuntimeError("nonsense")))
+    monkeypatch.setattr(
+        addon, "credentials", lambda: (_ for _ in ()).throw(RuntimeError("nonsense"))
+    )
 
     assert addon.limit_watch_once() == addon.WATCH_IDLE_SEC
 
@@ -837,8 +877,7 @@ def test_the_token_s_clock_is_consulted_no_faster_than_the_setting(
     monkeypatch.setattr(addon, "credentials", lambda: looks.append(1) or consult())
     # A renewal that hands back a minute-long token, so the next tick would renew again if
     # the pace were not kept to.
-    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed",
-                                                     "expires_in": 60})
+    seen = two_endpoints(addon, monkeypatch, renewal={"access_token": "renewed", "expires_in": 60})
 
     addon.limit_watch_once()
     addon.limit_watch_once()
@@ -860,10 +899,14 @@ def test_the_token_s_clock_is_consulted_no_faster_than_the_setting(
 def test_each_window_is_judged_against_its_own_figure(addon, client, monkeypatch, signed_in):
     monkeypatch.setattr(addon, "SESSION_THRESHOLD", 95)
     monkeypatch.setattr(addon, "WEEK_THRESHOLD", 50)
-    answers_with(addon, monkeypatch, {
-        "five_hour": {"utilization": 80, "resets_at": "2026-08-12T20:40:00Z"},
-        "seven_day": {"utilization": 60, "resets_at": "2026-08-13T03:00:00Z"},
-    })
+    answers_with(
+        addon,
+        monkeypatch,
+        {
+            "five_hour": {"utilization": 80, "resets_at": "2026-08-12T20:40:00Z"},
+            "seven_day": {"utilization": 60, "resets_at": "2026-08-13T03:00:00Z"},
+        },
+    )
 
     usage = client.get("/usage").json
 
@@ -873,17 +916,19 @@ def test_each_window_is_judged_against_its_own_figure(addon, client, monkeypatch
     assert usage["worst"]["kind"] == "week", "even though the session window is the fuller one"
 
 
-def test_the_fuller_window_is_not_the_one_that_bites_first(
-    addon, client, monkeypatch, signed_in
-):
+def test_the_fuller_window_is_not_the_one_that_bites_first(addon, client, monkeypatch, signed_in):
     """Which window stops work is a question of room left to its own figure, not of which
     number is bigger — that is the whole point of setting them apart."""
     monkeypatch.setattr(addon, "SESSION_THRESHOLD", 95)
     monkeypatch.setattr(addon, "WEEK_THRESHOLD", 75)
-    answers_with(addon, monkeypatch, {
-        "five_hour": {"utilization": 85, "resets_at": "2026-08-12T20:40:00Z"},  # ten to go
-        "seven_day": {"utilization": 70, "resets_at": "2026-08-13T03:00:00Z"},  # five to go
-    })
+    answers_with(
+        addon,
+        monkeypatch,
+        {
+            "five_hour": {"utilization": 85, "resets_at": "2026-08-12T20:40:00Z"},  # ten to go
+            "seven_day": {"utilization": 70, "resets_at": "2026-08-13T03:00:00Z"},  # five to go
+        },
+    )
 
     usage = client.get("/usage").json
 
@@ -896,10 +941,14 @@ def test_a_session_over_its_figure_stops_work_though_the_week_is_empty(
 ):
     monkeypatch.setattr(addon, "SESSION_THRESHOLD", 60)
     monkeypatch.setattr(addon, "WEEK_THRESHOLD", 90)
-    answers_with(addon, monkeypatch, {
-        "five_hour": {"utilization": 65, "resets_at": "2026-08-12T20:40:00Z"},
-        "seven_day": {"utilization": 5, "resets_at": "2026-08-13T03:00:00Z"},
-    })
+    answers_with(
+        addon,
+        monkeypatch,
+        {
+            "five_hour": {"utilization": 65, "resets_at": "2026-08-12T20:40:00Z"},
+            "seven_day": {"utilization": 5, "resets_at": "2026-08-13T03:00:00Z"},
+        },
+    )
 
     usage = client.get("/usage").json
 
@@ -914,5 +963,4 @@ def test_the_figures_are_reported_even_when_the_reading_cannot_be_had(addon, cli
     usage = client.get("/usage").json
 
     assert usage["available"] is False
-    assert usage["thresholds"] == {"session": addon.SESSION_THRESHOLD,
-                                   "week": addon.WEEK_THRESHOLD}
+    assert usage["thresholds"] == {"session": addon.SESSION_THRESHOLD, "week": addon.WEEK_THRESHOLD}

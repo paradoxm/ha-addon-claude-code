@@ -18,6 +18,7 @@ import pytest
 # names and paths
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.parametrize(
     "name",
     ["ok\n", "../etc", "..", ".hidden", "", "with space", "sla/sh", "tab\t", "-leading"],
@@ -89,6 +90,7 @@ def test_anything_else_never_reaches_the_command_line(addon, target):
 # reading and writing state
 # --------------------------------------------------------------------------- #
 
+
 def test_a_reader_never_sees_half_a_written_file(addon, tmp_path):
     target = tmp_path / "state.json"
     addon.write_json(target, {"n": 0})
@@ -140,6 +142,7 @@ def test_timestamps_carry_microseconds_so_two_in_a_row_can_be_ordered(addon):
 # --------------------------------------------------------------------------- #
 # transcripts
 # --------------------------------------------------------------------------- #
+
 
 @pytest.mark.parametrize(
     ("content", "expected"),
@@ -214,9 +217,7 @@ def test_a_session_id_that_could_be_a_path_reads_as_an_empty_conversation(addon,
     assert addon.read_conversation(session) == ([], [])
 
 
-def test_a_half_written_line_does_not_lose_the_rest_of_the_transcript(
-    addon, transcripts_dir
-):
+def test_a_half_written_line_does_not_lose_the_rest_of_the_transcript(addon, transcripts_dir):
     session = "cccccccc-0000-4000-8000-000000000001"
     (transcripts_dir / f"{session}.jsonl").write_text(
         json.dumps({"type": "user", "message": {"role": "user", "content": "kept"}})
@@ -252,9 +253,7 @@ def test_a_subagent_s_own_chatter_is_not_part_of_the_conversation(addon, transcr
     assert turns == []
 
 
-def test_a_reminder_appended_to_a_message_is_removed_and_the_message_kept(
-    addon, transcripts_dir
-):
+def test_a_reminder_appended_to_a_message_is_removed_and_the_message_kept(addon, transcripts_dir):
     session = "cccccccc-0000-4000-8000-000000000003"
     (transcripts_dir / f"{session}.jsonl").write_text(
         json.dumps(
@@ -309,9 +308,7 @@ def test_a_file_that_is_not_a_session_is_not_listed_as_one(addon, transcripts_di
         (transcripts_dir / "notes.jsonl").unlink()
 
 
-def test_a_scan_of_a_transcript_with_a_broken_line_still_reports_the_rest(
-    addon, transcripts_dir
-):
+def test_a_scan_of_a_transcript_with_a_broken_line_still_reports_the_rest(addon, transcripts_dir):
     path = transcripts_dir / "dddddddd-0000-4000-8000-000000000002.jsonl"
     path.write_text(
         "{ broken\n"
@@ -351,9 +348,7 @@ def test_a_conversation_with_no_transcript_yet_has_no_name(addon, transcripts_di
     assert addon.session_title("eeeeeeee-0000-4000-8000-000000000000") is None
 
 
-def test_the_transcript_directory_is_found_even_if_the_cli_renames_it(
-    addon, monkeypatch, tmp_path
-):
+def test_the_transcript_directory_is_found_even_if_the_cli_renames_it(addon, monkeypatch, tmp_path):
     monkeypatch.setattr(addon, "HOME", tmp_path)
     renamed = tmp_path / ".claude" / "projects" / "something-else-entirely-chat"
     renamed.mkdir(parents=True)
@@ -364,6 +359,7 @@ def test_the_transcript_directory_is_found_even_if_the_cli_renames_it(
 # --------------------------------------------------------------------------- #
 # how much of the window is left
 # --------------------------------------------------------------------------- #
+
 
 def test_the_context_reading_comes_from_the_cli_s_own_numbers(addon):
     context = addon.context_of(
@@ -407,11 +403,23 @@ def test_the_size_in_use_is_the_last_request_not_all_of_them_added_up(addon, tmp
     """
     stream = tmp_path / "stream.jsonl"
     stream.write_text(
-        json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 500}}}) + "\n"
-        + json.dumps({"type": "assistant", "parent_tool_use_id": "toolu_Task",
-                      "message": {"usage": {"input_tokens": 9000}}}) + "\n"
-        + json.dumps({"type": "assistant", "message": {
-            "usage": {"input_tokens": 100, "cache_read_input_tokens": 600}}}) + "\n"
+        json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 500}}})
+        + "\n"
+        + json.dumps(
+            {
+                "type": "assistant",
+                "parent_tool_use_id": "toolu_Task",
+                "message": {"usage": {"input_tokens": 9000}},
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "assistant",
+                "message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 600}},
+            }
+        )
+        + "\n"
         + '{"type": "assistant", "message": {"usage": {"inp'  # half-written, as it is mid-turn
     )
 
@@ -426,9 +434,13 @@ def test_the_turn_s_own_totals_are_used_when_the_stream_says_nothing(addon, tmp_
 
 @pytest.mark.parametrize(
     "written",
-    ["", "\n\n", '{"type": "system", "level": "warning"}\n',
-     '{"type": "assistant", "message": {"usage": {}}}\n',
-     '{"type": "assistant", "message": {"usage": "not a dict"}}\n'],
+    [
+        "",
+        "\n\n",
+        '{"type": "system", "level": "warning"}\n',
+        '{"type": "assistant", "message": {"usage": {}}}\n',
+        '{"type": "assistant", "message": {"usage": "not a dict"}}\n',
+    ],
 )
 def test_a_stream_with_nothing_to_read_reports_no_size(addon, tmp_path, written):
     (tmp_path / "stream.jsonl").write_text(written)
@@ -465,6 +477,7 @@ def test_a_full_window_never_reads_as_less_than_nothing_left(addon):
 # --------------------------------------------------------------------------- #
 # the streaming output
 # --------------------------------------------------------------------------- #
+
 
 def test_nothing_streamed_yet_reads_as_no_text_and_no_result(addon, tmp_path):
     assert addon.stream_text(tmp_path) == ""
@@ -539,8 +552,11 @@ def stream_of(*records) -> str:
 
 
 def said(text: str, **extra) -> dict:
-    return {"type": "assistant", **extra,
-            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+    return {
+        "type": "assistant",
+        **extra,
+        "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+    }
 
 
 def delta(text: str) -> dict:
@@ -551,11 +567,15 @@ def test_each_message_of_a_long_turn_is_a_line_of_its_own(addon, tmp_path):
     """A two-hour turn reported its progress every couple of minutes, and every one of those
     is a message. Glued together — which is what happened — the newest could not be told from
     the first, and a caller showing progress had nothing to show."""
-    (tmp_path / "stream.jsonl").write_text(stream_of(
-        delta("Три черновика написаны."), said("Три черновика написаны."),
-        delta("Жду разборов."), said("Жду разборов."),
-        delta("Вариант 1 доведён."),
-    ))
+    (tmp_path / "stream.jsonl").write_text(
+        stream_of(
+            delta("Три черновика написаны."),
+            said("Три черновика написаны."),
+            delta("Жду разборов."),
+            said("Жду разборов."),
+            delta("Вариант 1 доведён."),
+        )
+    )
 
     assert addon.stream_text(tmp_path).splitlines() == [
         "Три черновика написаны.",
@@ -566,31 +586,44 @@ def test_each_message_of_a_long_turn_is_a_line_of_its_own(addon, tmp_path):
 
 def test_a_message_is_not_counted_twice_when_its_deltas_are_also_there(addon, tmp_path):
     """The CLI reports a message both ways: word by word as it comes, then whole."""
-    (tmp_path / "stream.jsonl").write_text(stream_of(
-        delta("Hello"), delta(" there"), said("Hello there"),
-    ))
+    (tmp_path / "stream.jsonl").write_text(
+        stream_of(
+            delta("Hello"),
+            delta(" there"),
+            said("Hello there"),
+        )
+    )
 
     assert addon.stream_text(tmp_path) == "Hello there"
 
 
 def test_a_subagent_s_message_does_not_join_the_lines(addon, tmp_path):
     """Its words are its own conversation, and it says a great deal more than the turn does."""
-    (tmp_path / "stream.jsonl").write_text(stream_of(
-        said("Жду разборов."),
-        said("a stylist's whole verdict", parent_tool_use_id="toolu_Task"),
-        delta("Вариант 1 доведён."),
-    ))
+    (tmp_path / "stream.jsonl").write_text(
+        stream_of(
+            said("Жду разборов."),
+            said("a stylist's whole verdict", parent_tool_use_id="toolu_Task"),
+            delta("Вариант 1 доведён."),
+        )
+    )
 
     assert addon.stream_text(tmp_path).splitlines() == ["Жду разборов.", "Вариант 1 доведён."]
 
 
 def test_a_message_with_nothing_but_a_tool_call_adds_no_empty_line(addon, tmp_path):
-    (tmp_path / "stream.jsonl").write_text(stream_of(
-        said("Читаю анкеты."),
-        {"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {}}]}},
-        delta("Готово."),
-    ))
+    (tmp_path / "stream.jsonl").write_text(
+        stream_of(
+            said("Читаю анкеты."),
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {}}],
+                },
+            },
+            delta("Готово."),
+        )
+    )
 
     assert addon.stream_text(tmp_path).splitlines() == ["Читаю анкеты.", "Готово."]
 
@@ -653,9 +686,7 @@ def test_the_session_is_taken_from_the_first_record_that_carries_one(addon, tmp_
 def test_a_stream_with_no_session_in_it_yet_names_no_conversation(addon, tmp_path):
     assert addon.stream_session(tmp_path) is None, "nothing written at all"
 
-    (tmp_path / "stream.jsonl").write_text(
-        json.dumps({"type": "stream_event", "event": {}}) + "\n"
-    )
+    (tmp_path / "stream.jsonl").write_text(json.dumps({"type": "stream_event", "event": {}}) + "\n")
 
     assert addon.stream_session(tmp_path) is None, "and nothing that says which"
 
@@ -680,6 +711,7 @@ def test_a_stream_that_cannot_be_read_is_reported_as_empty(addon, tmp_path, monk
 # --------------------------------------------------------------------------- #
 # stopping a run
 # --------------------------------------------------------------------------- #
+
 
 class FakeClock:
     """Stands in for the `time` module for one caller, keeping monotonic honest."""
@@ -735,9 +767,7 @@ def test_a_turn_that_ignores_the_stop_is_killed(addon, client, monkeypatch):
     assert settled["status"] == "running", "the worker, not the caller, writes the outcome"
 
 
-def test_stopping_a_turn_whose_process_has_already_gone_is_not_an_error(
-    addon, monkeypatch
-):
+def test_stopping_a_turn_whose_process_has_already_gone_is_not_an_error(addon, monkeypatch):
     job = addon.create_job({"prompt": "already finished"})
     addon.write_job({**job, "status": "running"})
     monkeypatch.setitem(addon.RUNNING, job["id"], addon.Turn())
@@ -749,9 +779,7 @@ def test_stopping_a_turn_whose_process_has_already_gone_is_not_an_error(
     addon.CANCELLED.discard(job["id"])
 
 
-def test_a_run_that_throws_something_unexpected_is_reported_on_the_job(
-    addon, client, monkeypatch
-):
+def test_a_run_that_throws_something_unexpected_is_reported_on_the_job(addon, client, monkeypatch):
     def explode(*_args, **_kwargs):
         raise RuntimeError("the volume went away")
 
@@ -765,9 +793,7 @@ def test_a_run_that_throws_something_unexpected_is_reported_on_the_job(
     assert settled["error"] == "RuntimeError: the volume went away"
 
 
-def test_a_job_record_that_cannot_be_rewritten_does_not_stop_the_reconciler(
-    addon, monkeypatch
-):
+def test_a_job_record_that_cannot_be_rewritten_does_not_stop_the_reconciler(addon, monkeypatch):
     job = addon.create_job({"prompt": "unwritable"})
     addon.write_job({**job, "status": "running"})
 
@@ -785,6 +811,7 @@ def test_a_job_record_that_cannot_be_rewritten_does_not_stop_the_reconciler(
 # files a run produced
 # --------------------------------------------------------------------------- #
 
+
 def test_no_jobs_directory_at_all_lists_no_jobs(addon, monkeypatch, tmp_path):
     monkeypatch.setattr(addon, "JOBS_DIR", tmp_path / "not-created")
 
@@ -800,9 +827,7 @@ def test_a_stray_file_among_the_job_directories_is_ignored(addon):
         stray.unlink()
 
 
-def test_a_file_that_vanishes_mid_walk_does_not_break_the_listing(
-    addon, monkeypatch, client
-):
+def test_a_file_that_vanishes_mid_walk_does_not_break_the_listing(addon, monkeypatch, client):
     """The tree is live: a run can delete its own scratch file mid-listing."""
     job = addon.create_job({"prompt": "produces a file"})
     (addon.JOBS_DIR / job["id"] / "result.md").write_text("done")
@@ -822,6 +847,7 @@ def test_a_file_that_vanishes_mid_walk_does_not_break_the_listing(
 # --------------------------------------------------------------------------- #
 # skills on disk
 # --------------------------------------------------------------------------- #
+
 
 def test_no_skills_directory_lists_nothing_rather_than_failing(addon, monkeypatch, tmp_path):
     monkeypatch.setattr(addon, "SKILLS_DIR", tmp_path / "not-created")
@@ -898,6 +924,7 @@ def test_a_skill_directory_that_is_no_longer_there_still_reports(addon, tmp_path
 # the CLI, when it will not behave
 # --------------------------------------------------------------------------- #
 
+
 def test_a_binary_that_cannot_be_run_reports_no_version(addon, monkeypatch):
     def refuse(*_args, **_kwargs):
         raise OSError("exec format error")
@@ -934,9 +961,7 @@ def test_an_install_that_hangs_is_reported_as_a_timeout(addon, monkeypatch):
     assert not addon.CLI_LOCK.locked()
 
 
-def test_an_install_that_throws_something_else_entirely_is_still_reported(
-    addon, monkeypatch
-):
+def test_an_install_that_throws_something_else_entirely_is_still_reported(addon, monkeypatch):
     def explode(*_args, **_kwargs):
         raise MemoryError("out of memory")
 
@@ -1002,6 +1027,7 @@ def test_the_daily_loop_keeps_checking(addon, monkeypatch):
 # starting up
 # --------------------------------------------------------------------------- #
 
+
 def test_with_no_token_the_api_is_bound_to_localhost_only(addon, monkeypatch):
     bound = {}
 
@@ -1063,6 +1089,7 @@ def test_without_a_token_a_request_needs_none(addon, client, monkeypatch):
 # --------------------------------------------------------------------------- #
 # whose clock the times are on
 # --------------------------------------------------------------------------- #
+
 
 def test_the_house_s_own_timezone_is_what_home_assistant_set(addon, monkeypatch):
     """Every add-on is handed it in TZ; times shown to a person should be the ones on the

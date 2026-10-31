@@ -92,12 +92,18 @@ def synced(addon):
     root = addon.HOME / ".claude" / "plugins" / "synced" / "org_account"
     root.mkdir(parents=True)
     (root / "figma~g2").mkdir()
-    (root / "manifest.json").write_text(json.dumps({"plugins": [
-        {"name": "figma", "generation": 2},
-        {"name": "engineering"},
-        {"name": "../not-a-name"},
-        "not an entry",
-    ]}))
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {"name": "figma", "generation": 2},
+                    {"name": "engineering"},
+                    {"name": "../not-a-name"},
+                    "not an entry",
+                ]
+            }
+        )
+    )
     before = addon.SETTINGS_PATH.read_text() if addon.SETTINGS_PATH.exists() else None
     addon.SETTINGS_PATH.write_text(json.dumps({"theme": "dark"}))
     yield root
@@ -158,9 +164,7 @@ def test_a_turn_switches_off_what_synced_since_the_last_one(addon, client, synce
     assert enabled_plugins(addon) == {"engineering@synced": False, "figma@synced": False}
 
 
-def test_a_settings_file_that_cannot_be_written_does_not_cost_the_turn(
-    addon, client, monkeypatch
-):
+def test_a_settings_file_that_cannot_be_written_does_not_cost_the_turn(addon, client, monkeypatch):
     from test_jobs import create_job, wait_for_status
 
     def refuse():

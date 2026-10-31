@@ -75,56 +75,136 @@ def run(argv: list) -> int:
             f"</command-message>\n<command-args>{title}</command-args>",
             "<local-command-stdout></local-command-stdout>",
         ):
-            append(session, {"type": "user", "message": {"role": "user", "content": content},
-                             "timestamp": "2026-01-01T00:00:02.000Z"})
+            append(
+                session,
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": content},
+                    "timestamp": "2026-01-01T00:00:02.000Z",
+                },
+            )
         append(session, {"type": "custom-title", "customTitle": title})
         # The CLI answers a local command with a message it wrote itself, marked
         # `<synthetic>`. It is bookkeeping, not a reply, and it was being shown as
         # one — so the stand-in writes it too.
-        append(session, {"type": "assistant", "isApiErrorMessage": False,
-                         "message": {"role": "assistant", "model": "<synthetic>",
-                                     "content": [{"type": "text",
-                                                  "text": "No response requested."}]},
-                         "timestamp": "2026-01-01T00:00:03.000Z"})
-        emit({"type": "result", "subtype": "success", "is_error": False, "result": "",
-              "session_id": session, "num_turns": 0})
+        append(
+            session,
+            {
+                "type": "assistant",
+                "isApiErrorMessage": False,
+                "message": {
+                    "role": "assistant",
+                    "model": "<synthetic>",
+                    "content": [{"type": "text", "text": "No response requested."}],
+                },
+                "timestamp": "2026-01-01T00:00:03.000Z",
+            },
+        )
+        emit(
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "result": "",
+                "session_id": session,
+                "num_turns": 0,
+            }
+        )
         return 0
     if prompt.startswith("/compact"):
-        emit({"type": "result", "subtype": "success", "is_error": False, "result": "",
-              "session_id": session, "num_turns": 0})
+        emit(
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "result": "",
+                "session_id": session,
+                "num_turns": 0,
+            }
+        )
         return 0
 
-    emit({"type": "system", "subtype": "init", "session_id": session,
-          "permissionMode": "manual", "capabilities": []})
-    append(session, {"type": "user", "message": {"role": "user", "content": prompt},
-                     "timestamp": "2026-01-01T00:00:00.000Z"})
+    emit(
+        {
+            "type": "system",
+            "subtype": "init",
+            "session_id": session,
+            "permissionMode": "manual",
+            "capabilities": [],
+        }
+    )
+    append(
+        session,
+        {
+            "type": "user",
+            "message": {"role": "user", "content": prompt},
+            "timestamp": "2026-01-01T00:00:00.000Z",
+        },
+    )
 
     if os.environ.get("STUB_API_ERROR"):
         # An API error is a message the CLI wrote itself, and the one synthetic
         # message that is worth showing — beside the conversation, not in it.
-        append(session, {"type": "assistant", "isApiErrorMessage": True,
-                         "message": {"role": "assistant", "model": "<synthetic>",
-                                     "content": [{"type": "text", "text":
-                                                  "API Error: model temporarily "
-                                                  "unavailable"}]},
-                         "timestamp": "2026-01-01T00:00:00.600Z"})
+        append(
+            session,
+            {
+                "type": "assistant",
+                "isApiErrorMessage": True,
+                "message": {
+                    "role": "assistant",
+                    "model": "<synthetic>",
+                    "content": [
+                        {"type": "text", "text": "API Error: model temporarily unavailable"}
+                    ],
+                },
+                "timestamp": "2026-01-01T00:00:00.600Z",
+            },
+        )
 
     if os.environ.get("STUB_NOTICE"):
         # Both shapes the real CLI uses to report trouble that is not the turn
         # failing: its own levelled `system` record, and a tool result marked as an
         # error. A tool error is not a text block, so it never reads as a message.
-        append(session, {"type": "system", "subtype": "informational", "level": "warning",
-                         "content": "Unknown command: /rname. Did you mean /rename?",
-                         "timestamp": "2026-01-01T00:00:00.500Z"})
-        append(session, {"type": "user", "message": {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "toolu_stub", "is_error": True,
-             "content": "<tool_use_error>File has not been read yet."
-                        "</tool_use_error>"}]},
-            "timestamp": "2026-01-01T00:00:00.700Z"})
+        append(
+            session,
+            {
+                "type": "system",
+                "subtype": "informational",
+                "level": "warning",
+                "content": "Unknown command: /rname. Did you mean /rename?",
+                "timestamp": "2026-01-01T00:00:00.500Z",
+            },
+        )
+        append(
+            session,
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_stub",
+                            "is_error": True,
+                            "content": "<tool_use_error>File has not been read yet."
+                            "</tool_use_error>",
+                        }
+                    ],
+                },
+                "timestamp": "2026-01-01T00:00:00.700Z",
+            },
+        )
 
     if os.environ.get("STUB_FAIL"):
-        emit({"type": "result", "subtype": "error", "is_error": True,
-              "result": "stub failure", "session_id": session})
+        emit(
+            {
+                "type": "result",
+                "subtype": "error",
+                "is_error": True,
+                "result": "stub failure",
+                "session_id": session,
+            }
+        )
         return 1
 
     if os.environ.get("STUB_TOOLS"):
@@ -134,17 +214,39 @@ def run(argv: list) -> int:
             ("Read", {"file_path": "/data/jobs/x/in/notes.docx"}),
             ("Bash", {"command": "python3 -c 'zipfile'"}),
         ):
-            emit({"type": "assistant", "message": {"role": "assistant", "content": [
-                {"type": "tool_use", "id": f"toolu_{name}", "name": name, "input": arguments}]}})
+            emit(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": f"toolu_{name}",
+                                "name": name,
+                                "input": arguments,
+                            }
+                        ],
+                    },
+                }
+            )
 
     # Every request the CLI makes reports the prompt it sent, and the prompt grows as
     # the turn goes on. A subagent's own request is in there too, and it is somebody
     # else's conversation. The totals in the result event add all of these up, which is
     # exactly why the size of the window in use cannot be read from them.
     for size, extra in ((400, {}), (900, {"parent_tool_use_id": "toolu_Task"}), (600, {})):
-        emit({"type": "assistant", **extra, "message": {
-            "role": "assistant", "content": [{"type": "text", "text": "thinking"}],
-            "usage": {"input_tokens": 10, "cache_read_input_tokens": size - 10}}})
+        emit(
+            {
+                "type": "assistant",
+                **extra,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "thinking"}],
+                    "usage": {"input_tokens": 10, "cache_read_input_tokens": size - 10},
+                },
+            }
+        )
 
     # A subagent, or a Bash tool call: work that happens in a child of this process, which
     # is why the add-on signals the whole process group rather than the CLI alone. The child
@@ -169,25 +271,45 @@ def run(argv: list) -> int:
 
     # Written before the streaming finishes, as the real CLI does: its transcript
     # grows during the turn, not only at the end.
-    append(session, {"type": "assistant",
-                     "message": {"role": "assistant", "content": [{"type": "text", "text": reply}]},
-                     "timestamp": "2026-01-01T00:00:01.000Z"})
+    append(
+        session,
+        {
+            "type": "assistant",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": reply}]},
+            "timestamp": "2026-01-01T00:00:01.000Z",
+        },
+    )
 
     for index, word in enumerate(reply.split()):
         piece = ("" if index == 0 else " ") + word
-        emit({"type": "stream_event",
-              "event": {"delta": {"type": "text_delta", "text": piece}}})
+        emit({"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": piece}}})
         if sleep:
             time.sleep(sleep / max(len(reply.split()), 1))
 
     append(session, {"type": "ai-title", "aiTitle": f"About {prompt[:30]}"})
 
-    emit({"type": "result", "subtype": "success", "is_error": False, "result": reply,
-          "session_id": session, "num_turns": 1,
-          "usage": {"input_tokens": 10, "cache_creation_input_tokens": 100,
-                    "cache_read_input_tokens": 1000},
-          "modelUsage": {"stub-model": {"contextWindow": 10000, "inputTokens": 10,
-                                        "cacheReadInputTokens": 1000}}})
+    emit(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "result": reply,
+            "session_id": session,
+            "num_turns": 1,
+            "usage": {
+                "input_tokens": 10,
+                "cache_creation_input_tokens": 100,
+                "cache_read_input_tokens": 1000,
+            },
+            "modelUsage": {
+                "stub-model": {
+                    "contextWindow": 10000,
+                    "inputTokens": 10,
+                    "cacheReadInputTokens": 1000,
+                }
+            },
+        }
+    )
     return 0
 
 
@@ -261,8 +383,10 @@ def main() -> int:
         target = argv[1] if len(argv) > 1 else "latest"
         # A channel installs whatever it currently points at; a version installs
         # itself, which is what makes "reinstalling the same one" testable.
-        version = target if re.fullmatch(r"[0-9]+(\.[0-9]+)*", target) else os.environ.get(
-            "STUB_INSTALL_TO", "9.9.99"
+        version = (
+            target
+            if re.fullmatch(r"[0-9]+(\.[0-9]+)*", target)
+            else os.environ.get("STUB_INSTALL_TO", "9.9.99")
         )
         INSTALLED_MARKER.parent.mkdir(parents=True, exist_ok=True)
         INSTALLED_MARKER.write_text(version)
